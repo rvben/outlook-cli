@@ -249,7 +249,12 @@ async fn auth_command(
 ) -> Result<(), AppError> {
     match command {
         AuthCommand::Login => {
-            let (name, profile) = config::load(profile_arg)?;
+            let (name, profile, initialized) = config::load_or_initialize(profile_arg)?;
+            if initialized {
+                out.note(format!(
+                    "Configured profile '{name}' with the maintained Outlook application."
+                ));
+            }
             let token = auth::login(&name, &profile, &out).await?;
             let value = serde_json::json!({"profile":name,"expires_at":token.expires_at,"scope":token.scope});
             out.value(&value, || format!("Signed in profile '{name}'."))

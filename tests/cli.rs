@@ -165,6 +165,42 @@ fn init_saves_a_read_only_profile_without_credentials() {
 }
 
 #[test]
+fn auth_login_bootstraps_the_default_profile() {
+    let temp = tempfile::tempdir().unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let unavailable_proxy = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("HOME", temp.path())
+        .env("XDG_CONFIG_HOME", temp.path())
+        .env("HTTPS_PROXY", &unavailable_proxy)
+        .env("ALL_PROXY", &unavailable_proxy)
+        .args(["auth", "login"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("run `outlook init`").not());
+
+    let output = Command::cargo_bin("outlook")
+        .unwrap()
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("HOME", temp.path())
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(["config", "show"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let profile: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(profile["profile"], "default");
+    assert_eq!(profile["tenant"], "common");
+    assert_eq!(profile["client_id"], outlook_cli::config::DEFAULT_CLIENT_ID);
+}
+
+#[test]
 fn no_args_never_prompts_when_piped() {
     Command::cargo_bin("outlook")
         .unwrap()

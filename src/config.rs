@@ -126,6 +126,64 @@ pub fn load(requested: Option<&str>) -> Result<(String, Profile), AppError> {
     ))
 }
 
+pub fn load_or_initialize(requested: Option<&str>) -> Result<(String, Profile, bool), AppError> {
+    let config = read_file()?;
+    let name = requested
+        .map(str::to_owned)
+        .or_else(|| std::env::var("OUTLOOK_PROFILE").ok())
+        .or(config.active_profile)
+        .unwrap_or_else(|| "default".into());
+    if config.profiles.contains_key(&name) {
+        let (name, profile) = load(Some(&name))?;
+        return Ok((name, profile, false));
+    }
+
+    let client_id = match std::env::var("OUTLOOK_CLIENT_ID") {
+        Ok(value) if value.trim().is_empty() => {
+            return Err(AppError::InvalidInput(
+                "OUTLOOK_CLIENT_ID cannot be empty".into(),
+            ));
+        }
+        Ok(value) => value,
+        Err(std::env::VarError::NotPresent) => DEFAULT_CLIENT_ID.into(),
+        Err(error) => {
+            return Err(AppError::InvalidInput(format!(
+                "cannot read OUTLOOK_CLIENT_ID: {error}"
+            )));
+        }
+    };
+    let tenant = match std::env::var("OUTLOOK_TENANT") {
+        Ok(value) if value.trim().is_empty() => {
+            return Err(AppError::InvalidInput(
+                "OUTLOOK_TENANT cannot be empty".into(),
+            ));
+        }
+        Ok(value) => value,
+        Err(std::env::VarError::NotPresent) => default_tenant(),
+        Err(error) => {
+            return Err(AppError::InvalidInput(format!(
+                "cannot read OUTLOOK_TENANT: {error}"
+            )));
+        }
+    };
+    let read_only = match std::env::var("OUTLOOK_READ_ONLY") {
+        Ok(value) => parse_bool("OUTLOOK_READ_ONLY", &value)?,
+        Err(std::env::VarError::NotPresent) => false,
+        Err(error) => {
+            return Err(AppError::InvalidInput(format!(
+                "cannot read OUTLOOK_READ_ONLY: {error}"
+            )));
+        }
+    };
+    let profile = Profile {
+        client_id,
+        tenant,
+        read_only,
+    };
+    save(&name, profile.clone())?;
+    Ok((name, profile, true))
+}
+
 pub fn configured_profile(requested: Option<&str>) -> Option<(String, Profile)> {
     load(requested).ok()
 }
