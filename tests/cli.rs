@@ -14,6 +14,10 @@ fn schema_is_offline_and_describes_the_core_surface() {
     assert_eq!(schema["clispec"], "0.3");
     assert_eq!(schema["name"], "outlook");
     assert_eq!(schema["extensions"]["id_type"], "ImmutableId");
+    assert_eq!(
+        schema["extensions"]["default_client_id"],
+        outlook_cli::config::DEFAULT_CLIENT_ID
+    );
     let commands = schema["commands"].as_array().unwrap();
     for name in [
         "inbox",
@@ -43,17 +47,15 @@ fn schema_can_select_one_command() {
 }
 
 #[test]
-fn init_requires_a_real_client_id() {
+fn init_rejects_an_explicitly_empty_client_id() {
     let temp = tempfile::tempdir().unwrap();
     Command::cargo_bin("outlook")
         .unwrap()
         .env("XDG_CONFIG_HOME", temp.path())
-        .args(["init", "--no-login"])
+        .args(["init", "--client-id=", "--no-login"])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains(
-            "public-client application ID is required",
-        ));
+        .stderr(predicate::str::contains("client ID cannot be empty"));
     assert!(!temp.path().join("outlook/config.toml").exists());
 }
 
@@ -63,19 +65,14 @@ fn init_saves_a_read_only_profile_without_credentials() {
     let output = Command::cargo_bin("outlook")
         .unwrap()
         .env("XDG_CONFIG_HOME", temp.path())
-        .args([
-            "init",
-            "--client-id",
-            "00000000-0000-0000-0000-000000000001",
-            "--read-only",
-            "--no-login",
-        ])
+        .args(["init", "--read-only", "--no-login"])
         .output()
         .unwrap();
     assert!(output.status.success());
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["read_only"], true);
     assert_eq!(value["signed_in"], false);
+    assert_eq!(value["client_id"], outlook_cli::config::DEFAULT_CLIENT_ID);
     assert!(temp.path().join("outlook/config.toml").is_file());
 }
 

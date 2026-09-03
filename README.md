@@ -24,34 +24,40 @@ cargo test
 
 ## Configure
 
-Create a Microsoft Entra app registration that supports the account types you
-need. Under **Authentication**, enable **Allow public client flows**. Add these
-delegated Microsoft Graph permissions for a writable profile:
+`outlook-cli` includes a maintained multitenant Microsoft Entra public-client
+registration, so the normal setup is simply:
 
-```text
-User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite
+```console
+outlook init
 ```
 
-For a read-only deployment, use `User.Read Mail.Read Calendars.Read` instead.
-Tenant policy can require administrator consent. Copy the registration's
-Application (client) ID, then run:
+The registration requests delegated Microsoft Graph permissions only:
+`User.Read`, `Mail.ReadWrite`, `Mail.Send`, and `Calendars.ReadWrite`. A
+read-only profile requests `Mail.Read` and `Calendars.Read` instead.
+
+For a staged or headless setup:
+
+```console
+outlook init --no-login
+outlook auth login
+```
+
+Read-only profiles also block remote writes locally:
+
+```console
+outlook init --read-only
+```
+
+Organizations with restrictive consent policies can use their own public-client
+registration. Enable public client flows and supply its Application (client) ID:
 
 ```console
 outlook init --client-id YOUR_APPLICATION_ID
 ```
 
-For a staged or headless setup:
-
-```console
-outlook init --client-id YOUR_APPLICATION_ID --no-login
-outlook auth login
-```
-
-Read-only profiles request only `Mail.Read` and `Calendars.Read`:
-
-```console
-outlook init --client-id YOUR_APPLICATION_ID --read-only
-```
+The same override is available through `OUTLOOK_CLIENT_ID`. Tenant policy can
+still require administrator approval, and the maintained registration is not
+yet publisher verified while the project is in its early development phase.
 
 For short-lived automation, `OUTLOOK_ACCESS_TOKEN` overrides stored
 credentials.

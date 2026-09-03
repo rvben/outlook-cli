@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppError;
 
 pub const DEFAULT_TENANT: &str = "common";
+/// The maintained multitenant public-client registration shipped with outlook-cli.
+pub const DEFAULT_CLIENT_ID: &str = "6b126a3c-899a-4767-a88f-120522bae38b";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
@@ -96,7 +98,11 @@ pub fn load(requested: Option<&str>) -> Result<(String, Profile), AppError> {
     let client_id = std::env::var("OUTLOOK_CLIENT_ID")
         .ok()
         .or_else(|| stored.map(|profile| profile.client_id.clone()))
-        .ok_or_else(|| AppError::InvalidInput(format!("profile '{name}' is not configured; run `outlook init --client-id APPLICATION_ID` or set OUTLOOK_CLIENT_ID")))?;
+        .ok_or_else(|| {
+            AppError::InvalidInput(format!(
+                "profile '{name}' is not configured; run `outlook init` or set OUTLOOK_CLIENT_ID"
+            ))
+        })?;
     let tenant = std::env::var("OUTLOOK_TENANT")
         .ok()
         .or_else(|| stored.map(|profile| profile.tenant.clone()))

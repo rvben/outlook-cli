@@ -52,7 +52,9 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
     let profile = cli.profile.as_deref();
     let command = cli.command.ok_or_else(|| {
         if io::stdin().is_terminal() && io::stdout().is_terminal() {
-            AppError::InvalidInput("no command was provided; run `outlook --help` or `outlook init --client-id APPLICATION_ID`".into())
+            AppError::InvalidInput(
+                "no command was provided; run `outlook --help` or `outlook init`".into(),
+            )
         } else {
             AppError::NonInteractive(
                 "no command was provided; run `outlook --help` or `outlook schema`".into(),
@@ -193,8 +195,13 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
 }
 
 async fn init(profile_name: &str, args: InitArgs, out: Output) -> Result<(), AppError> {
-    let client_id = args.client_id.filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| AppError::InvalidInput("a public-client application ID is required; pass --client-id or set OUTLOOK_CLIENT_ID".into()))?;
+    let client_id = match args.client_id {
+        Some(value) if value.trim().is_empty() => {
+            return Err(AppError::InvalidInput("client ID cannot be empty".into()));
+        }
+        Some(value) => value,
+        None => config::DEFAULT_CLIENT_ID.into(),
+    };
     if args.tenant.trim().is_empty() {
         return Err(AppError::InvalidInput("tenant cannot be empty".into()));
     }
@@ -212,6 +219,7 @@ async fn init(profile_name: &str, args: InitArgs, out: Output) -> Result<(), App
     #[derive(Serialize)]
     struct Result<'a> {
         profile: &'a str,
+        client_id: &'a str,
         config_path: String,
         signed_in: bool,
         tenant: &'a str,
@@ -219,6 +227,7 @@ async fn init(profile_name: &str, args: InitArgs, out: Output) -> Result<(), App
     }
     let result = Result {
         profile: profile_name,
+        client_id: &profile.client_id,
         config_path: path.display().to_string(),
         signed_in: token.is_some(),
         tenant: &profile.tenant,
@@ -349,7 +358,7 @@ async fn doctor(profile_arg: Option<&str>, offline: bool, out: Output) -> Result
         .unwrap_or(profile_arg.unwrap_or("default"));
     let signed_in = auth::has_token(name);
     let mut checks = vec![
-        serde_json::json!({"name":"configuration","ok":configured.is_some(),"detail":if configured.is_some(){"profile is configured"}else{"run outlook init --client-id APPLICATION_ID"}}),
+        serde_json::json!({"name":"configuration","ok":configured.is_some(),"detail":if configured.is_some(){"profile is configured"}else{"run outlook init"}}),
         serde_json::json!({"name":"credentials","ok":signed_in,"detail":if signed_in{"credential is available"}else{"run outlook auth login"}}),
     ];
     if !offline && configured.is_some() && signed_in {

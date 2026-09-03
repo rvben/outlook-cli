@@ -8,7 +8,7 @@ use crate::output::OutputFormat;
     name = "outlook",
     version,
     about = "Microsoft Outlook from your terminal, for humans and agents",
-    after_help = "Get started:\n  outlook init --client-id APPLICATION_ID\n  outlook inbox\n  outlook calendar agenda --start START --end END\n  outlook doctor\n  outlook schema --command 'mail send'"
+    after_help = "Get started:\n  outlook init\n  outlook inbox\n  outlook calendar agenda --start START --end END\n  outlook doctor\n  outlook schema --command 'mail send'"
 )]
 pub struct Cli {
     #[arg(long, global = true, env = "OUTLOOK_PROFILE")]
@@ -69,7 +69,7 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct InitArgs {
-    /// Application ID of a Microsoft Entra public-client registration
+    /// Override the bundled Microsoft Entra public-client application ID
     #[arg(long, env = "OUTLOOK_CLIENT_ID")]
     pub client_id: Option<String>,
     /// Tenant ID/domain, common, organizations, or consumers

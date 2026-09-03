@@ -51,6 +51,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 "idempotent",
                 vec![
                     field("profile", "string"),
+                    field("client_id", "string"),
                     field("config_path", "string"),
                     field("signed_in", "boolean"),
                     field("tenant", "string"),
@@ -58,10 +59,10 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 ],
             );
             value["args"] = json!([
-                required_arg(
+                arg(
                     "--client-id",
                     "string",
-                    "Entra public-client application ID"
+                    "Override the bundled Entra public-client application ID"
                 ),
                 arg(
                     "--tenant",
@@ -306,6 +307,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
         "errors":error::ALL.iter().map(|contract| json!({"kind":contract.kind,"exit_code":contract.exit_code,"retryable":contract.retryable,"description":contract.description})).collect::<Vec<_>>(),
         "extensions":{
             "authentication":"delegated_oauth_device_code",
+            "default_client_id":crate::config::DEFAULT_CLIENT_ID,
             "api":"Microsoft Graph v1.0",
             "id_type":"ImmutableId",
             "read_only_env":"OUTLOOK_READ_ONLY",
