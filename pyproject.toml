@@ -1,0 +1,32 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "outlook-cli-rs"
+requires-python = ">=3.8"
+description = "Microsoft Outlook from your terminal, for humans and agents"
+readme = "README.md"
+license = "MIT"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Communications :: Email",
+    "Topic :: Office/Business :: Scheduling",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/rvben/outlook-cli"
+Repository = "https://github.com/rvben/outlook-cli"
+Issues = "https://github.com/rvben/outlook-cli/issues"
+
+[tool.maturin]
+bindings = "bin"
+strip = true

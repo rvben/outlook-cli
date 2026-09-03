@@ -22,6 +22,16 @@ cargo build
 cargo test
 ```
 
+## Install
+
+```console
+cargo install outlook-cli --locked
+# or, without a Rust toolchain
+uv tool install outlook-cli-rs
+```
+
+Both packages install the `outlook` executable.
+
 ## Configure
 
 `outlook-cli` includes a maintained multitenant Microsoft Entra public-client
