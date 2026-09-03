@@ -101,17 +101,54 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             "idempotent",
             vec![field("profile", "string"), field("signed_in", "boolean")],
         ),
+        {
+            let mut value = single(
+                "auth status",
+                "Verify authentication and inspect credential state",
+                "read_only",
+                vec![
+                    field("profile", "string"),
+                    field("configured", "boolean"),
+                    field("signed_in", "boolean"),
+                    field("read_only", "boolean"),
+                    field("verified", "boolean"),
+                    json!({"name":"identity","type":"object","nullable":true}),
+                ],
+            );
+            value["args"] = json!([arg(
+                "--offline",
+                "boolean",
+                "Inspect local credential state without contacting Microsoft Graph"
+            )]);
+            value
+        },
         single(
-            "auth status",
-            "Inspect local configuration and credential presence",
+            "profile list",
+            "List configured profiles and identify the active one",
             "read_only",
-            vec![
-                field("profile", "string"),
-                field("configured", "boolean"),
-                field("signed_in", "boolean"),
-                field("read_only", "boolean"),
-            ],
+            vec![array_field("items", "object"), field("total", "integer")],
         ),
+        {
+            let mut value = single(
+                "profile use",
+                "Select the default profile for future commands",
+                "idempotent",
+                vec![field("profile", "string"), field("active", "boolean")],
+            );
+            value["args"] = json!([required_arg("name", "string", "Profile name")]);
+            value
+        },
+        {
+            let mut value = single(
+                "profile remove",
+                "Remove a profile and its stored credential",
+                "idempotent",
+                vec![field("profile", "string"), field("removed", "boolean")],
+            );
+            value["args"] = json!([required_arg("name", "string", "Profile name")]);
+            value["confirmation_bypass_arg"] = json!("--yes");
+            value
+        },
         single(
             "config show",
             "Print the resolved profile without credentials",
@@ -476,12 +513,20 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             ]);
             value
         },
-        single(
-            "doctor",
-            "Check configuration, credential storage, and Graph access",
-            "read_only",
-            vec![array_field("checks", "object"), field("healthy", "boolean")],
-        ),
+        {
+            let mut value = single(
+                "doctor",
+                "Check configuration, credential storage, and Graph access",
+                "read_only",
+                vec![array_field("checks", "object"), field("healthy", "boolean")],
+            );
+            value["args"] = json!([arg(
+                "--offline",
+                "boolean",
+                "Check local state without contacting Microsoft Graph"
+            )]);
+            value
+        },
         single(
             "capabilities",
             "Describe supported and planned capabilities",

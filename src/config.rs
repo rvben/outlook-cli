@@ -37,6 +37,15 @@ struct ConfigFile {
     profiles: BTreeMap<String, Profile>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ProfileSummary {
+    pub name: String,
+    pub active: bool,
+    pub tenant: String,
+    pub client_id: String,
+    pub read_only: bool,
+}
+
 fn default_tenant() -> String {
     DEFAULT_TENANT.into()
 }
@@ -66,6 +75,11 @@ pub fn save(profile_name: &str, profile: Profile) -> Result<PathBuf, AppError> {
     let mut config = read_file()?;
     config.profiles.insert(profile_name.into(), profile);
     config.active_profile = Some(profile_name.into());
+    write_file(&path, &config)?;
+    Ok(path)
+}
+
+fn write_file(path: &std::path::Path, config: &ConfigFile) -> Result<(), AppError> {
     let parent = path
         .parent()
         .ok_or_else(|| AppError::Unexpected("configuration path has no parent".into()))?;
@@ -83,8 +97,8 @@ pub fn save(profile_name: &str, profile: Profile) -> Result<PathBuf, AppError> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o600))?;
     }
-    temp.persist(&path).map_err(|error| error.error)?;
-    Ok(path)
+    temp.persist(path).map_err(|error| error.error)?;
+    Ok(())
 }
 
 pub fn load(requested: Option<&str>) -> Result<(String, Profile), AppError> {
@@ -186,6 +200,46 @@ pub fn load_or_initialize(requested: Option<&str>) -> Result<(String, Profile, b
 
 pub fn configured_profile(requested: Option<&str>) -> Option<(String, Profile)> {
     load(requested).ok()
+}
+
+pub fn profile_summaries() -> Result<Vec<ProfileSummary>, AppError> {
+    let config = read_file()?;
+    Ok(config
+        .profiles
+        .iter()
+        .map(|(name, profile)| ProfileSummary {
+            name: name.clone(),
+            active: config.active_profile.as_deref() == Some(name.as_str()),
+            tenant: profile.tenant.clone(),
+            client_id: profile.client_id.clone(),
+            read_only: profile.read_only,
+        })
+        .collect())
+}
+
+pub fn use_profile(name: &str) -> Result<(), AppError> {
+    let path = path();
+    let mut config = read_file()?;
+    if !config.profiles.contains_key(name) {
+        return Err(AppError::InvalidInput(format!(
+            "profile '{name}' is not configured"
+        )));
+    }
+    config.active_profile = Some(name.into());
+    write_file(&path, &config)
+}
+
+pub fn remove_profile(name: &str) -> Result<bool, AppError> {
+    let path = path();
+    let mut config = read_file()?;
+    let removed = config.profiles.remove(name).is_some();
+    if removed {
+        if config.active_profile.as_deref() == Some(name) {
+            config.active_profile = config.profiles.keys().next().cloned();
+        }
+        write_file(&path, &config)?;
+    }
+    Ok(removed)
 }
 
 fn parse_bool(name: &str, value: &str) -> Result<bool, AppError> {

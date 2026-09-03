@@ -178,6 +178,58 @@ fn init_saves_a_read_only_profile_without_credentials() {
 }
 
 #[test]
+fn profile_lifecycle_and_offline_auth_status_are_local() {
+    let temp = tempfile::tempdir().unwrap();
+    for name in ["work", "personal"] {
+        Command::cargo_bin("outlook")
+            .unwrap()
+            .env("XDG_CONFIG_HOME", temp.path())
+            .args(["--profile", name, "init", "--no-login"])
+            .assert()
+            .success();
+    }
+
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(["profile", "use", "work"])
+        .assert()
+        .success();
+
+    let list = Command::cargo_bin("outlook")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(["--output", "json", "profile", "list"])
+        .output()
+        .unwrap();
+    assert!(list.status.success());
+    let value: Value = serde_json::from_slice(&list.stdout).unwrap();
+    assert_eq!(value["total"], 2);
+    assert!(
+        value["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|profile| { profile["name"] == "work" && profile["active"] == true })
+    );
+
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(["auth", "status", "--offline"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"verified\": false"));
+
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(["profile", "remove", "personal", "--yes"])
+        .assert()
+        .success();
+}
+
+#[test]
 fn auth_login_bootstraps_the_default_profile() {
     let temp = tempfile::tempdir().unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

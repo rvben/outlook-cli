@@ -37,6 +37,11 @@ pub enum Command {
         #[command(subcommand)]
         command: AuthCommand,
     },
+    /// List, select, or remove configuration profiles
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommand,
+    },
     /// Inspect resolved secret-free configuration
     Config {
         #[command(subcommand)]
@@ -94,8 +99,22 @@ pub enum AuthCommand {
     Login,
     /// Remove locally stored credentials
     Logout,
-    /// Show local authentication status without network access
-    Status,
+    /// Verify authentication and show the selected profile's status
+    Status {
+        /// Inspect local credential state without contacting Microsoft Graph
+        #[arg(long)]
+        offline: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProfileCommand {
+    /// List configured profiles and identify the active one
+    List,
+    /// Select the default profile for future commands
+    Use { name: String },
+    /// Remove a profile and its stored credential
+    Remove { name: String },
 }
 
 #[derive(Debug, Subcommand)]

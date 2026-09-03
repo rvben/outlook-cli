@@ -94,6 +94,13 @@ outlook calendar agenda --start 2026-09-03T00:00:00Z --end 2026-09-10T00:00:00Z
 outlook calendar create --subject 'Project sync' \
   --start 2026-09-04T09:00:00 --end 2026-09-04T09:30:00 \
   --timezone Europe/Amsterdam --attendee person@example.com
+outlook auth status                 # verify the selected credential
+outlook auth status --offline       # inspect local credential state only
+outlook profile list
+outlook profile use work
+outlook profile remove old --yes
+outlook config show
+outlook config path
 outlook doctor --offline
 outlook schema --command 'mail send'
 ```

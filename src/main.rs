@@ -8,7 +8,7 @@ use serde_json::Value;
 use outlook_cli::auth;
 use outlook_cli::cli::{
     AttachmentCommand, AuthCommand, CalendarCommand, Cli, Command, ConfigCommand, DraftCommand,
-    InitArgs, MailCommand, PageArgs,
+    InitArgs, MailCommand, PageArgs, ProfileCommand,
 };
 use outlook_cli::config::{self, Profile};
 use outlook_cli::error::AppError;
@@ -67,6 +67,7 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
     match command {
         Command::Init(args) => init(profile.unwrap_or("default"), args, out).await,
         Command::Auth { command } => auth_command(profile, command, out).await,
+        Command::Profile { command } => profile_command(command, yes, out),
         Command::Config { command } => config_command(profile, command, out),
         Command::Whoami => {
             let value = client(profile).await?.me().await?;
@@ -320,15 +321,21 @@ async fn auth_command(
             let value = serde_json::json!({"profile":name,"signed_in":false});
             out.value(&value, || format!("Signed out profile '{name}'."))
         }
-        AuthCommand::Status => {
+        AuthCommand::Status { offline } => {
             let configured = config::configured_profile(profile_arg);
             let name = configured
                 .as_ref()
                 .map(|(name, _)| name.as_str())
                 .unwrap_or(profile_arg.unwrap_or("default"));
+            let identity = if !offline && configured.is_some() && auth::has_token(name) {
+                Some(client(Some(name)).await?.me().await?)
+            } else {
+                None
+            };
             let value = serde_json::json!({
                 "profile":name,"configured":configured.is_some(),"signed_in":auth::has_token(name),
                 "read_only":configured.as_ref().is_some_and(|(_, profile)| profile.read_only),
+                "verified": identity.is_some(), "identity": identity,
                 "granted_scopes":auth::granted_scopes(name),"config_path":config::path()
             });
             out.value(&value, || {
@@ -340,6 +347,59 @@ async fn auth_command(
                     config::path().display()
                 )
             })
+        }
+    }
+}
+
+fn profile_command(command: ProfileCommand, yes: bool, out: Output) -> Result<(), AppError> {
+    match command {
+        ProfileCommand::List => {
+            let profiles = config::profile_summaries()?;
+            out.value(
+                &serde_json::json!({"items": profiles, "total": profiles.len()}),
+                || {
+                    if profiles.is_empty() {
+                        "No profiles configured. Run `outlook init`.".into()
+                    } else {
+                        profiles
+                            .iter()
+                            .map(|profile| {
+                                format!(
+                                    "{} {}  {}",
+                                    if profile.active { "*" } else { " " },
+                                    profile.name,
+                                    profile.tenant
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    }
+                },
+            )
+        }
+        ProfileCommand::Use { name } => {
+            config::use_profile(&name)?;
+            out.value(
+                &serde_json::json!({"profile": name, "active": true}),
+                || format!("Active profile set to '{name}'."),
+            )
+        }
+        ProfileCommand::Remove { name } => {
+            if !yes {
+                return Err(AppError::InvalidInput(
+                    "profile removal requires --yes".into(),
+                ));
+            }
+            auth::logout(&name)?;
+            if !config::remove_profile(&name)? {
+                return Err(AppError::InvalidInput(format!(
+                    "profile '{name}' is not configured"
+                )));
+            }
+            out.value(
+                &serde_json::json!({"profile": name, "removed": true}),
+                || format!("Removed profile '{name}'."),
+            )
         }
     }
 }
