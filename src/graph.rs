@@ -184,6 +184,7 @@ impl GraphClient {
             .post(self.endpoint(&format!("me/messages/{}/send", segment(id)))?)
             .bearer_auth(&self.token)
             .header("Prefer", IMMUTABLE_ID)
+            .header(reqwest::header::CONTENT_LENGTH, "0")
             .body(Vec::new())
             .send()
             .await

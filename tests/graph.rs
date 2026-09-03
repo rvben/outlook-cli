@@ -238,6 +238,7 @@ async fn sending_a_draft_posts_an_empty_body() {
     Mock::given(method("POST"))
         .and(path("/v1.0/me/messages/draft-1/send"))
         .and(body_bytes(Vec::<u8>::new()))
+        .and(header("content-length", "0"))
         .respond_with(ResponseTemplate::new(202))
         .expect(1)
         .mount(&server)
