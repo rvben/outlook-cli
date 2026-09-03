@@ -1,6 +1,6 @@
 [package]
 name = "outlook-cli"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.90"
 description = "Microsoft Outlook from your terminal, for humans and agents"
@@ -16,6 +16,7 @@ name = "outlook"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
 dirs = "6"

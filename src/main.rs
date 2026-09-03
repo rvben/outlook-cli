@@ -1,4 +1,5 @@
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, IsTerminal, Read, Write};
+use std::path::Path;
 
 use clap::{CommandFactory, Parser};
 use serde::Serialize;
@@ -6,7 +7,8 @@ use serde_json::Value;
 
 use outlook_cli::auth;
 use outlook_cli::cli::{
-    AuthCommand, CalendarCommand, Cli, Command, ConfigCommand, InitArgs, MailCommand, PageArgs,
+    AttachmentCommand, AuthCommand, CalendarCommand, Cli, Command, ConfigCommand, DraftCommand,
+    InitArgs, MailCommand, PageArgs,
 };
 use outlook_cli::config::{self, Profile};
 use outlook_cli::error::AppError;
@@ -50,6 +52,7 @@ async fn main() {
 
 async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
     let profile = cli.profile.as_deref();
+    let yes = cli.yes;
     let command = cli.command.ok_or_else(|| {
         if io::stdin().is_terminal() && io::stdout().is_terminal() {
             AppError::InvalidInput(
@@ -81,21 +84,60 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
         }
         Command::Mail {
             command:
+                MailCommand::Search {
+                    query,
+                    folder,
+                    page,
+                },
+        } => {
+            if query.trim().is_empty() {
+                return Err(AppError::InvalidInput(
+                    "search query cannot be empty".into(),
+                ));
+            }
+            if folder
+                .as_ref()
+                .is_some_and(|folder| folder.trim().is_empty())
+            {
+                return Err(AppError::InvalidInput("folder cannot be empty".into()));
+            }
+            let mut result = client(profile)
+                .await?
+                .search_messages(
+                    &query,
+                    folder.as_deref(),
+                    page.limit,
+                    page.cursor.as_deref(),
+                )
+                .await?;
+            graph::select_fields(&mut result, page.fields.as_deref())?;
+            render_page(&result, out, message_line)
+        }
+        Command::Mail {
+            command: MailCommand::MarkRead { id },
+        } => set_message_read(profile, &id, true, out).await,
+        Command::Mail {
+            command: MailCommand::MarkUnread { id },
+        } => set_message_read(profile, &id, false, out).await,
+        Command::Mail {
+            command:
                 MailCommand::Send {
                     to,
                     cc,
+                    bcc,
                     subject,
                     body,
                 },
         } => {
             validate_addresses(&to)?;
             validate_addresses(&cc)?;
+            validate_addresses(&bcc)?;
             if subject.trim().is_empty() {
                 return Err(AppError::InvalidInput("subject cannot be empty".into()));
             }
             let body = read_body(&body)?;
             let graph = writable_client(profile).await?;
-            let value = graph.send_mail(&to, &cc, &subject, &body).await?;
+            let value = graph.send_mail(&to, &cc, &bcc, &subject, &body).await?;
             out.value(&value, || format!("Sent “{subject}” to {}", to.join(", ")))
         }
         Command::Mail {
@@ -129,6 +171,19 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
                 .await?;
             out.value(&value, || format!("Moved message to {destination}."))
         }
+        Command::Mail {
+            command: MailCommand::Delete { id },
+        } => {
+            confirm_destructive(yes, "Delete this message?")?;
+            let value = writable_client(profile).await?.delete_message(&id).await?;
+            out.value(&value, || "Deleted message.".into())
+        }
+        Command::Mail {
+            command: MailCommand::Draft { command },
+        } => draft_command(profile, command, yes, out).await,
+        Command::Mail {
+            command: MailCommand::Attachment { command },
+        } => attachment_command(profile, command, yes, out).await,
         Command::Calendar {
             command:
                 CalendarCommand::Agenda {
@@ -339,6 +394,244 @@ async fn list_messages(
     render_page(&result, out, message_line)
 }
 
+async fn set_message_read(
+    profile: Option<&str>,
+    id: &str,
+    read: bool,
+    out: Output,
+) -> Result<(), AppError> {
+    let value = writable_client(profile)
+        .await?
+        .set_message_read(id, read)
+        .await?;
+    out.value(&value, || {
+        if read {
+            "Marked message as read.".into()
+        } else {
+            "Marked message as unread.".into()
+        }
+    })
+}
+
+async fn draft_command(
+    profile: Option<&str>,
+    command: DraftCommand,
+    yes: bool,
+    out: Output,
+) -> Result<(), AppError> {
+    match command {
+        DraftCommand::List(page) => list_messages(profile, "drafts", page, out).await,
+        DraftCommand::Create {
+            to,
+            cc,
+            bcc,
+            subject,
+            body,
+        } => {
+            validate_addresses(&to)?;
+            validate_addresses(&cc)?;
+            validate_addresses(&bcc)?;
+            let body = read_body(&body)?;
+            let value = writable_client(profile)
+                .await?
+                .create_draft(&to, &cc, &bcc, &subject, &body)
+                .await?;
+            out.value(&value, || {
+                if subject.is_empty() {
+                    "Created untitled draft.".into()
+                } else {
+                    format!("Created draft “{subject}”.")
+                }
+            })
+        }
+        DraftCommand::Update {
+            id,
+            to,
+            clear_to,
+            cc,
+            clear_cc,
+            bcc,
+            clear_bcc,
+            subject,
+            body,
+        } => {
+            validate_addresses(&to)?;
+            validate_addresses(&cc)?;
+            validate_addresses(&bcc)?;
+            let to = recipient_update(&to, clear_to);
+            let cc = recipient_update(&cc, clear_cc);
+            let bcc = recipient_update(&bcc, clear_bcc);
+            let body = body.as_deref().map(read_body).transpose()?;
+            if to.is_none() && cc.is_none() && bcc.is_none() && subject.is_none() && body.is_none()
+            {
+                return Err(AppError::InvalidInput(
+                    "draft update requires at least one field".into(),
+                ));
+            }
+            let value = writable_client(profile)
+                .await?
+                .update_draft(&id, to, cc, bcc, subject.as_deref(), body.as_deref())
+                .await?;
+            out.value(&value, || "Updated draft.".into())
+        }
+        DraftCommand::Send { id } => {
+            let value = writable_client(profile).await?.send_draft(&id).await?;
+            out.value(&value, || "Sent draft.".into())
+        }
+        DraftCommand::Delete { id } => {
+            confirm_destructive(yes, "Delete this draft?")?;
+            let value = writable_client(profile).await?.delete_message(&id).await?;
+            out.value(&value, || "Deleted draft.".into())
+        }
+    }
+}
+
+fn recipient_update(addresses: &[String], clear: bool) -> Option<&[String]> {
+    if clear || !addresses.is_empty() {
+        Some(addresses)
+    } else {
+        None
+    }
+}
+
+async fn attachment_command(
+    profile: Option<&str>,
+    command: AttachmentCommand,
+    yes: bool,
+    out: Output,
+) -> Result<(), AppError> {
+    match command {
+        AttachmentCommand::List { message_id, page } => {
+            let mut result = client(profile)
+                .await?
+                .attachments(&message_id, page.limit, page.cursor.as_deref())
+                .await?;
+            graph::select_fields(&mut result, page.fields.as_deref())?;
+            render_page(&result, out, attachment_line)
+        }
+        AttachmentCommand::Add {
+            message_id,
+            path,
+            content_type,
+        } => {
+            let metadata = std::fs::metadata(&path).map_err(|error| {
+                AppError::InvalidInput(format!("cannot read {}: {error}", path.display()))
+            })?;
+            if !metadata.is_file() {
+                return Err(AppError::InvalidInput(format!(
+                    "attachment is not a file: {}",
+                    path.display()
+                )));
+            }
+            if metadata.len() > graph::MAX_ATTACHMENT_SIZE as u64 {
+                return Err(AppError::InvalidInput(
+                    "attachments cannot exceed 150 MiB".into(),
+                ));
+            }
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| {
+                    AppError::InvalidInput("attachment needs a valid file name".into())
+                })?;
+            let content_type = content_type
+                .as_deref()
+                .unwrap_or("application/octet-stream");
+            if content_type.trim().is_empty() || !content_type.contains('/') {
+                return Err(AppError::InvalidInput(
+                    "content type must look like type/subtype".into(),
+                ));
+            }
+            let bytes = std::fs::read(&path)?;
+            let value = writable_client(profile)
+                .await?
+                .add_file_attachment(&message_id, name, content_type, &bytes)
+                .await?;
+            out.value(&value, || format!("Attached {name}."))
+        }
+        AttachmentCommand::Download {
+            message_id,
+            attachment_id,
+            path,
+            force,
+        } => {
+            validate_download_path(&path, force)?;
+            let bytes = client(profile)
+                .await?
+                .download_attachment(&message_id, &attachment_id)
+                .await?;
+            write_download(&path, &bytes, force)?;
+            let value = serde_json::json!({
+                "message_id":message_id,
+                "attachment_id":attachment_id,
+                "path":path,
+                "size":bytes.len()
+            });
+            out.value(&value, || {
+                format!("Downloaded {} bytes to {}.", bytes.len(), path.display())
+            })
+        }
+        AttachmentCommand::Delete {
+            message_id,
+            attachment_id,
+        } => {
+            confirm_destructive(yes, "Delete this attachment?")?;
+            let value = writable_client(profile)
+                .await?
+                .delete_attachment(&message_id, &attachment_id)
+                .await?;
+            out.value(&value, || "Deleted attachment.".into())
+        }
+    }
+}
+
+fn validate_download_path(path: &Path, force: bool) -> Result<(), AppError> {
+    if path.exists() && !force {
+        return Err(AppError::InvalidInput(format!(
+            "destination already exists: {}; pass --force to replace it",
+            path.display()
+        )));
+    }
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    if !parent.is_dir() {
+        return Err(AppError::InvalidInput(format!(
+            "destination directory does not exist: {}",
+            parent.display()
+        )));
+    }
+    Ok(())
+}
+
+fn write_download(path: &Path, bytes: &[u8], force: bool) -> Result<(), AppError> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut temp = tempfile::Builder::new()
+        .prefix(".outlook-download-")
+        .tempfile_in(parent)?;
+    temp.write_all(bytes)?;
+    temp.flush()?;
+    if force {
+        temp.persist(path).map_err(|error| error.error)?;
+    } else {
+        temp.persist_noclobber(path).map_err(|error| {
+            if error.error.kind() == io::ErrorKind::AlreadyExists {
+                AppError::InvalidInput(format!(
+                    "destination already exists: {}; pass --force to replace it",
+                    path.display()
+                ))
+            } else {
+                AppError::Io(error.error)
+            }
+        })?;
+    }
+    Ok(())
+}
+
 fn render_page(page: &Page, out: Output, line: fn(&Value) -> String) -> Result<(), AppError> {
     out.value(page, || {
         let mut text = if page.items.is_empty() {
@@ -392,11 +685,11 @@ async fn doctor(profile_arg: Option<&str>, offline: bool, out: Output) -> Result
 
 fn capabilities(out: Output) -> Result<(), AppError> {
     let value = serde_json::json!({
-        "supported":["delegated device-code OAuth","personal and work/school accounts","inbox and folder listing","message reading, sending, replying, and moving","calendar agenda and event creation","immutable Outlook IDs","read-only profiles","CLI Spec v0.3"],
-        "planned":["browser PKCE login","keyboard-first TUI","drafts and attachments","mail search","meeting responses","contacts and categories","delta synchronization and local cache"],
+        "supported":["delegated device-code OAuth","personal and work/school accounts","mail listing, reading, search, and field projection","sending, replying, moving, deleting, and read-state updates","draft lifecycle","attachment upload and download up to 150 MiB","calendar agenda and event creation","immutable Outlook IDs","read-only profiles","CLI Spec v0.3"],
+        "planned":["browser PKCE login","keyboard-first TUI","HTML composition and inline attachments","meeting responses","contacts and categories","delta synchronization and local cache"],
         "api":"Microsoft Graph v1.0"
     });
-    out.value(&value, || "Supported: mail and calendar essentials, safe automation contracts, and device-code OAuth.\nPlanned: TUI, drafts, attachments, search, responses, contacts, and delta sync.".into())
+    out.value(&value, || "Supported: full mail lifecycle, attachments, calendar essentials, safe automation contracts, and device-code OAuth.\nPlanned: TUI, rich composition, meeting responses, contacts, and delta sync.".into())
 }
 
 fn read_body(raw: &str) -> Result<String, AppError> {
@@ -499,6 +792,15 @@ fn event_line(value: &Value) -> String {
     )
 }
 
+fn attachment_line(value: &Value) -> String {
+    format!(
+        "{:<42}  {:>10}  {}",
+        truncate(string(value, "/name"), 42),
+        value.pointer("/size").and_then(Value::as_u64).unwrap_or(0),
+        string(value, "/contentType")
+    )
+}
+
 fn string<'a>(value: &'a Value, pointer: &str) -> &'a str {
     value.pointer(pointer).and_then(Value::as_str).unwrap_or("")
 }
@@ -515,4 +817,26 @@ fn truncate(value: &str, width: usize) -> String {
 }
 fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
+}
+
+fn confirm_destructive(yes: bool, prompt: &str) -> Result<(), AppError> {
+    if yes {
+        return Ok(());
+    }
+    if !io::stdin().is_terminal() {
+        return Err(AppError::ConfirmationRequired(format!(
+            "{prompt} Re-run with --yes to confirm."
+        )));
+    }
+    eprint!("{prompt} [y/N] ");
+    io::stderr().flush()?;
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    if answer.trim().eq_ignore_ascii_case("y") {
+        Ok(())
+    } else {
+        Err(AppError::ConfirmationRequired(
+            "operation cancelled; no changes were made".into(),
+        ))
+    }
 }

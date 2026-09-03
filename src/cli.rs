@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand};
 use clap_complete::Shell;
 
@@ -17,6 +19,9 @@ pub struct Cli {
     pub output: OutputFormat,
     #[arg(long, global = true)]
     pub quiet: bool,
+    /// Skip confirmation prompts for destructive operations
+    #[arg(long, short = 'y', global = true)]
+    pub yes: bool,
     #[arg(long, global = true, hide = true)]
     pub json: bool,
     #[command(subcommand)]
@@ -123,12 +128,28 @@ pub enum MailCommand {
     },
     /// Read one message
     Read { id: String },
+    /// Search messages using Microsoft Outlook search syntax
+    Search {
+        /// Search text or a supported KQL expression
+        query: String,
+        /// Restrict the search to a well-known folder or folder ID
+        #[arg(long)]
+        folder: Option<String>,
+        #[command(flatten)]
+        page: PageArgs,
+    },
+    /// Mark one message as read
+    MarkRead { id: String },
+    /// Mark one message as unread
+    MarkUnread { id: String },
     /// Send a plain-text message
     Send {
         #[arg(long, required = true)]
         to: Vec<String>,
         #[arg(long)]
         cc: Vec<String>,
+        #[arg(long)]
+        bcc: Vec<String>,
         #[arg(long)]
         subject: String,
         /// Plain-text body, or - to read stdin
@@ -150,6 +171,95 @@ pub enum MailCommand {
         #[arg(long)]
         destination: String,
     },
+    /// Delete one message after confirmation
+    Delete { id: String },
+    /// Create, inspect, update, send, or delete drafts
+    Draft {
+        #[command(subcommand)]
+        command: DraftCommand,
+    },
+    /// List, add, download, or delete message attachments
+    Attachment {
+        #[command(subcommand)]
+        command: AttachmentCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AttachmentCommand {
+    /// List attachment metadata without downloading content
+    List {
+        message_id: String,
+        #[command(flatten)]
+        page: PageArgs,
+    },
+    /// Add a file attachment to a draft
+    Add {
+        message_id: String,
+        path: PathBuf,
+        /// Override the attachment MIME type
+        #[arg(long)]
+        content_type: Option<String>,
+    },
+    /// Download an attachment without overwriting by default
+    Download {
+        message_id: String,
+        attachment_id: String,
+        path: PathBuf,
+        /// Replace an existing destination file
+        #[arg(long)]
+        force: bool,
+    },
+    /// Delete an attachment after confirmation
+    Delete {
+        message_id: String,
+        attachment_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DraftCommand {
+    /// List messages in the Drafts folder
+    List(PageArgs),
+    /// Create a saved plain-text draft
+    Create {
+        #[arg(long)]
+        to: Vec<String>,
+        #[arg(long)]
+        cc: Vec<String>,
+        #[arg(long)]
+        bcc: Vec<String>,
+        #[arg(long, default_value = "")]
+        subject: String,
+        /// Plain-text body, or - to read stdin
+        #[arg(long, default_value = "")]
+        body: String,
+    },
+    /// Update selected fields on a saved draft
+    Update {
+        id: String,
+        #[arg(long, conflicts_with = "clear_to")]
+        to: Vec<String>,
+        #[arg(long)]
+        clear_to: bool,
+        #[arg(long, conflicts_with = "clear_cc")]
+        cc: Vec<String>,
+        #[arg(long)]
+        clear_cc: bool,
+        #[arg(long, conflicts_with = "clear_bcc")]
+        bcc: Vec<String>,
+        #[arg(long)]
+        clear_bcc: bool,
+        #[arg(long)]
+        subject: Option<String>,
+        /// Plain-text body, or - to read stdin
+        #[arg(long)]
+        body: Option<String>,
+    },
+    /// Send an existing draft
+    Send { id: String },
+    /// Delete an existing draft after confirmation
+    Delete { id: String },
 }
 
 #[derive(Debug, Subcommand)]

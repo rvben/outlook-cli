@@ -20,6 +20,8 @@ pub enum AppError {
     #[error("{0}")]
     NonInteractive(String),
     #[error("{0}")]
+    ConfirmationRequired(String),
+    #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Unexpected(String),
@@ -83,6 +85,12 @@ pub const ALL: &[ErrorContract] = &[
         description: "An interactive command was invoked without a terminal",
     },
     ErrorContract {
+        kind: "confirmation_required",
+        exit_code: 2,
+        retryable: false,
+        description: "A destructive operation requires confirmation or --yes",
+    },
+    ErrorContract {
         kind: "unexpected_error",
         exit_code: 1,
         retryable: false,
@@ -101,6 +109,7 @@ impl AppError {
             Self::Api(_) => "api_error",
             Self::RateLimit(_) => "rate_limit",
             Self::NonInteractive(_) => "tty_required",
+            Self::ConfirmationRequired(_) => "confirmation_required",
             Self::Io(_) | Self::Unexpected(_) => "unexpected_error",
         };
         *ALL.iter().find(|contract| contract.kind == kind).unwrap()

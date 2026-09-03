@@ -23,6 +23,19 @@ fn schema_is_offline_and_describes_the_core_surface() {
     let commands = schema["commands"].as_array().unwrap();
     for name in [
         "inbox",
+        "mail search",
+        "mail mark-read",
+        "mail mark-unread",
+        "mail delete",
+        "mail draft list",
+        "mail draft create",
+        "mail draft update",
+        "mail draft send",
+        "mail draft delete",
+        "mail attachment list",
+        "mail attachment add",
+        "mail attachment download",
+        "mail attachment delete",
         "mail send",
         "mail reply",
         "calendar agenda",
@@ -228,4 +241,76 @@ fn invalid_email_is_rejected_before_authentication() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains("invalid email address"));
+}
+
+#[test]
+fn deleting_mail_requires_explicit_confirmation_before_authentication() {
+    let temp = tempfile::tempdir().unwrap();
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(["mail", "delete", "message-1"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("\"kind\":\"confirmation_required\"")
+                .and(predicate::str::contains("--yes")),
+        );
+}
+
+#[test]
+fn attachment_download_never_overwrites_without_force() {
+    let temp = tempfile::tempdir().unwrap();
+    let destination = temp.path().join("report.pdf");
+    std::fs::write(&destination, b"keep me").unwrap();
+
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args([
+            "mail",
+            "attachment",
+            "download",
+            "message-1",
+            "attachment-1",
+        ])
+        .arg(&destination)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("pass --force to replace it"));
+
+    assert_eq!(std::fs::read(destination).unwrap(), b"keep me");
+}
+
+#[test]
+fn draft_update_requires_at_least_one_change_before_authentication() {
+    let temp = tempfile::tempdir().unwrap();
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(["mail", "draft", "update", "draft-1"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "draft update requires at least one field",
+        ));
+}
+
+#[test]
+fn read_only_profile_blocks_marking_mail_before_authentication() {
+    let temp = tempfile::tempdir().unwrap();
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(["init", "--read-only", "--no-login"])
+        .assert()
+        .success();
+
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(["mail", "mark-read", "message-1"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("\"kind\":\"read_only\""));
 }

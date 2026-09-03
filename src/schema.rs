@@ -154,7 +154,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             let mut value = paged(
                 "mail list",
                 "List messages in a mail folder",
-                message_fields,
+                message_fields.clone(),
             );
             value["args"].as_array_mut().unwrap().insert(
                 0,
@@ -178,6 +178,204 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             value
         },
         {
+            let mut value = paged(
+                "mail search",
+                "Search messages across the mailbox or within one folder",
+                vec![
+                    field("id", "string"),
+                    field("subject", "string"),
+                    field("from", "object"),
+                    field("receivedDateTime", "string"),
+                    field("isRead", "boolean"),
+                    field("hasAttachments", "boolean"),
+                    field("importance", "string"),
+                ],
+            );
+            value["args"].as_array_mut().unwrap().splice(
+                0..0,
+                [
+                    required_arg("query", "string", "Search text or KQL expression"),
+                    arg("--folder", "string", "Well-known folder name or folder ID"),
+                ],
+            );
+            value
+        },
+        {
+            let mut value = single(
+                "mail mark-read",
+                "Mark one message as read",
+                "idempotent",
+                vec![field("id", "string"), field("isRead", "boolean")],
+            );
+            value["args"] = json!([required_arg("id", "string", "Immutable message ID")]);
+            value
+        },
+        {
+            let mut value = single(
+                "mail mark-unread",
+                "Mark one message as unread",
+                "idempotent",
+                vec![field("id", "string"), field("isRead", "boolean")],
+            );
+            value["args"] = json!([required_arg("id", "string", "Immutable message ID")]);
+            value
+        },
+        {
+            let mut value = single(
+                "mail delete",
+                "Delete one message after confirmation",
+                "idempotent",
+                vec![field("deleted", "boolean"), field("message_id", "string")],
+            );
+            value["args"] = json!([required_arg("id", "string", "Immutable message ID")]);
+            value["confirmation_bypass_arg"] = json!("--yes");
+            value
+        },
+        paged("mail draft list", "List saved drafts", message_fields),
+        {
+            let mut value = single(
+                "mail draft create",
+                "Create a saved plain-text draft",
+                "non_idempotent",
+                vec![
+                    field("id", "string"),
+                    field("subject", "string"),
+                    field("isDraft", "boolean"),
+                ],
+            );
+            value["args"] = json!([
+                arg("--to", "array", "Recipient address; repeatable"),
+                arg("--cc", "array", "CC address; repeatable"),
+                arg("--bcc", "array", "BCC address; repeatable"),
+                arg("--subject", "string", "Message subject"),
+                arg("--body", "string", "Message body, or - for stdin")
+            ]);
+            value
+        },
+        {
+            let mut value = single(
+                "mail draft update",
+                "Update selected fields on a saved draft",
+                "idempotent",
+                vec![
+                    field("id", "string"),
+                    field("subject", "string"),
+                    field("isDraft", "boolean"),
+                ],
+            );
+            value["args"] = json!([
+                required_arg("id", "string", "Immutable draft ID"),
+                arg("--to", "array", "Replace To recipients; repeatable"),
+                arg("--clear-to", "boolean", "Remove all To recipients"),
+                arg("--cc", "array", "Replace CC recipients; repeatable"),
+                arg("--clear-cc", "boolean", "Remove all CC recipients"),
+                arg("--bcc", "array", "Replace BCC recipients; repeatable"),
+                arg("--clear-bcc", "boolean", "Remove all BCC recipients"),
+                arg("--subject", "string", "Replace the subject"),
+                arg("--body", "string", "Replace the body, or - for stdin")
+            ]);
+            value
+        },
+        {
+            let mut value = single(
+                "mail draft send",
+                "Send an existing draft",
+                "non_idempotent",
+                vec![field("sent", "boolean"), field("draft_id", "string")],
+            );
+            value["args"] = json!([required_arg("id", "string", "Immutable draft ID")]);
+            value
+        },
+        {
+            let mut value = single(
+                "mail draft delete",
+                "Delete an existing draft after confirmation",
+                "idempotent",
+                vec![field("deleted", "boolean"), field("message_id", "string")],
+            );
+            value["args"] = json!([required_arg("id", "string", "Immutable draft ID")]);
+            value["confirmation_bypass_arg"] = json!("--yes");
+            value
+        },
+        {
+            let mut value = paged(
+                "mail attachment list",
+                "List attachment metadata without downloading content",
+                vec![
+                    field("id", "string"),
+                    field("name", "string"),
+                    field("contentType", "string"),
+                    field("size", "integer"),
+                    field("isInline", "boolean"),
+                ],
+            );
+            value["args"].as_array_mut().unwrap().insert(
+                0,
+                required_arg("message_id", "string", "Immutable message ID"),
+            );
+            value
+        },
+        {
+            let mut value = single(
+                "mail attachment add",
+                "Attach a local file to a draft, up to 150 MiB",
+                "non_idempotent",
+                vec![
+                    field("id", "string"),
+                    field("name", "string"),
+                    field("size", "integer"),
+                ],
+            );
+            value["args"] = json!([
+                required_arg("message_id", "string", "Immutable draft ID"),
+                required_arg("path", "string", "Local file path"),
+                arg(
+                    "--content-type",
+                    "string",
+                    "Override the attachment MIME type"
+                )
+            ]);
+            value
+        },
+        {
+            let mut value = single(
+                "mail attachment download",
+                "Download one attachment without overwriting by default",
+                "idempotent",
+                vec![
+                    field("message_id", "string"),
+                    field("attachment_id", "string"),
+                    field("path", "string"),
+                    field("size", "integer"),
+                ],
+            );
+            value["args"] = json!([
+                required_arg("message_id", "string", "Immutable message ID"),
+                required_arg("attachment_id", "string", "Attachment ID"),
+                required_arg("path", "string", "Local destination path"),
+                arg("--force", "boolean", "Replace an existing destination file")
+            ]);
+            value
+        },
+        {
+            let mut value = single(
+                "mail attachment delete",
+                "Delete one attachment after confirmation",
+                "idempotent",
+                vec![
+                    field("deleted", "boolean"),
+                    field("message_id", "string"),
+                    field("attachment_id", "string"),
+                ],
+            );
+            value["args"] = json!([
+                required_arg("message_id", "string", "Immutable message ID"),
+                required_arg("attachment_id", "string", "Attachment ID")
+            ]);
+            value["confirmation_bypass_arg"] = json!("--yes");
+            value
+        },
+        {
             let mut value = single(
                 "mail send",
                 "Send one plain-text message",
@@ -186,12 +384,14 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                     field("sent", "boolean"),
                     array_field("to", "string"),
                     array_field("cc", "string"),
+                    array_field("bcc", "string"),
                     field("subject", "string"),
                 ],
             );
             value["args"] = json!([
                 required_arg("--to", "array", "Recipient address; repeatable"),
                 arg("--cc", "array", "CC address; repeatable"),
+                arg("--bcc", "array", "BCC address; repeatable"),
                 required_arg("--subject", "string", "Message subject"),
                 required_arg("--body", "string", "Message body, or - for stdin")
             ]);
@@ -308,7 +508,8 @@ pub fn generate(command_filter: Option<&str>) -> Value {
         "global_args":[
             {"name":"--output","short":"-o","type":"string","enum":["auto","text","json"],"default":"auto","description":"Output format"},
             {"name":"--profile","type":"string","description":"Configuration profile"},
-            {"name":"--quiet","type":"boolean","description":"Suppress informational stderr output"}
+            {"name":"--quiet","type":"boolean","description":"Suppress informational stderr output"},
+            {"name":"--yes","short":"-y","type":"boolean","description":"Skip confirmation prompts for destructive operations"}
         ],
         "commands":commands,
         "errors":error::ALL.iter().map(|contract| json!({"kind":contract.kind,"exit_code":contract.exit_code,"retryable":contract.retryable,"description":contract.description})).collect::<Vec<_>>(),
