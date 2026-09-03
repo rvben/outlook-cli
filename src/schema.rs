@@ -5,6 +5,9 @@ use crate::{auth, error};
 fn field(name: &str, kind: &str) -> Value {
     json!({"name":name,"type":kind})
 }
+fn array_field(name: &str, item_kind: &str) -> Value {
+    json!({"name":name,"type":"array","items":{"type":item_kind}})
+}
 fn arg(name: &str, kind: &str, description: &str) -> Value {
     json!({"name":name,"type":kind,"description":description})
 }
@@ -121,12 +124,16 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 field("config_path", "string"),
             ],
         ),
-        single(
-            "config path",
-            "Print the absolute configuration file path",
-            "read_only",
-            vec![],
-        ),
+        {
+            let mut value = single(
+                "config path",
+                "Print the absolute configuration file path",
+                "read_only",
+                vec![],
+            );
+            value["example"] = json!({"args":[]});
+            value
+        },
         single(
             "whoami",
             "Show the signed-in Microsoft identity",
@@ -177,8 +184,8 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 "non_idempotent",
                 vec![
                     field("sent", "boolean"),
-                    field("to", "array"),
-                    field("cc", "array"),
+                    array_field("to", "string"),
+                    array_field("cc", "string"),
                     field("subject", "string"),
                 ],
             );
@@ -273,15 +280,15 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             "doctor",
             "Check configuration, credential storage, and Graph access",
             "read_only",
-            vec![field("checks", "array"), field("healthy", "boolean")],
+            vec![array_field("checks", "object"), field("healthy", "boolean")],
         ),
         single(
             "capabilities",
             "Describe supported and planned capabilities",
             "read_only",
             vec![
-                field("supported", "array"),
-                field("planned", "array"),
+                array_field("supported", "string"),
+                array_field("planned", "string"),
                 field("api", "string"),
             ],
         ),

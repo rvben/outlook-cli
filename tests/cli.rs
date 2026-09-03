@@ -2,6 +2,8 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
 
+const CLISPEC_V0_3: &str = include_str!("fixtures/clispec-v0.3.json");
+
 #[test]
 fn schema_is_offline_and_describes_the_core_surface() {
     let output = Command::cargo_bin("outlook")
@@ -31,6 +33,92 @@ fn schema_is_offline_and_describes_the_core_surface() {
             "missing {name}"
         );
     }
+}
+
+#[test]
+fn schema_validates_against_clispec_v0_3() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::cargo_bin("outlook")
+        .unwrap()
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("HOME", temp.path())
+        .env("XDG_CONFIG_HOME", temp.path())
+        .arg("schema")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let instance: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let specification: Value = serde_json::from_str(CLISPEC_V0_3).unwrap();
+    let validator = jsonschema::validator_for(&specification).unwrap();
+    let errors = validator
+        .iter_errors(&instance)
+        .map(|error| format!("{}: {error}", error.instance_path()))
+        .collect::<Vec<_>>();
+    assert!(
+        errors.is_empty(),
+        "schema must validate against CLI Spec v0.3: {}",
+        errors.join("; ")
+    );
+}
+
+#[test]
+fn schema_exposes_a_credential_free_representative_example() {
+    let schema_output = Command::cargo_bin("outlook")
+        .unwrap()
+        .arg("schema")
+        .output()
+        .unwrap();
+    assert!(schema_output.status.success());
+    let schema: Value = serde_json::from_slice(&schema_output.stdout).unwrap();
+    let example_command = schema["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|command| command["effects"] == "read_only" && command.get("example").is_some())
+        .expect("schema must provide a safe representative example");
+    let mut args = example_command["name"]
+        .as_str()
+        .unwrap()
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    args.extend(
+        example_command["example"]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|arg| arg.as_str().unwrap().to_owned()),
+    );
+
+    let temp = tempfile::tempdir().unwrap();
+    let json_output = Command::cargo_bin("outlook")
+        .unwrap()
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("HOME", temp.path())
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(&args)
+        .output()
+        .unwrap();
+    assert!(json_output.status.success());
+    assert!(json_output.stderr.is_empty());
+    assert!(serde_json::from_slice::<Value>(&json_output.stdout).is_ok());
+
+    let text_output = Command::cargo_bin("outlook")
+        .unwrap()
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("HOME", temp.path())
+        .env("XDG_CONFIG_HOME", temp.path())
+        .args(&args)
+        .args(["--output", "text"])
+        .output()
+        .unwrap();
+    assert!(text_output.status.success());
+    assert!(text_output.stderr.is_empty());
+    assert!(serde_json::from_slice::<Value>(&text_output.stdout).is_err());
 }
 
 #[test]
