@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3 - 2026-09-08
+
+### Fixed
+
+- Ship prebuilt Python wheels for Windows x64, Intel and Apple Silicon macOS, and x64/ARM64 Linux (glibc and musl), so supported `uv` installations do not need Rust.
+- Build and verify the full platform matrix before publishing, including `uv` installation with source builds disabled and standalone executable smoke tests.
+- Provide executable archives and SHA-256 checksums for every wheel target.
+- Clarify that source installations on other platforms require Rust and native build tools.
+
 ## 0.2.2 - 2026-09-08
 
 ### Added

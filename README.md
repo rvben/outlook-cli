@@ -36,11 +36,24 @@ OUTLOOK_TEST_POWERSHELL=/path/to/pwsh cargo test --test desktop_bridge -- --igno
 
 ```console
 cargo install outlook-cli --locked
-# or, without a Rust toolchain
+# or, using a prebuilt wheel (supported platforms below)
 uv tool install outlook-cli-rs
 ```
 
 Both packages install the `outlook` executable.
+
+Starting with 0.2.3, PyPI wheels cover Windows x64, macOS Intel/Apple Silicon,
+and Linux x64/ARM64 (glibc 2.17+ or musl 1.2+). WSL uses the Linux wheel.
+These wheels contain the compiled executable, so Rust is not needed to install
+or run them. Other platforms require Rust and native build tools to build the
+source distribution. To require a prebuilt package and fail instead of compiling:
+
+```sh
+uv tool install --no-build outlook-cli-rs
+```
+
+See [the release process](docs/releases.md) for the build matrix and publication checks.
+
 
 ## Configure
 
