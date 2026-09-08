@@ -399,3 +399,51 @@ async fn deleting_an_attachment_uses_its_message_scoped_endpoint() {
         })
     );
 }
+
+#[tokio::test]
+async fn folder_listing_supports_root_children_and_continuations() {
+    let server = MockServer::start().await;
+    let next = format!("{}/v1.0/me/mailFolders?$skiptoken=next", server.uri());
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/mailFolders"))
+        .and(query_param("$top", "1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            json!({"value":[{"id":"inbox","displayName":"Inbox"}],"@odata.nextLink":next}),
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/mailFolders"))
+        .and(query_param("$skiptoken", "next"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"value":[]})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/mailFolders/inbox/childFolders"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"value":[{"id":"child","displayName":"Child"}]})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client =
+        GraphClient::with_base("secret".into(), &format!("{}/v1.0", server.uri())).unwrap();
+    let page = client.folders(None, 1, None).await.unwrap();
+    assert!(page.truncated);
+    assert_eq!(page.next_cursor.as_deref(), Some(next.as_str()));
+    assert!(
+        client
+            .folders(None, 1, page.next_cursor.as_deref())
+            .await
+            .unwrap()
+            .items
+            .is_empty()
+    );
+    assert_eq!(
+        client.folders(Some("inbox"), 1, None).await.unwrap().items[0]["id"],
+        "child"
+    );
+}

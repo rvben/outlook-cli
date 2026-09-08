@@ -29,7 +29,7 @@ fn paged(name: &str, description: &str, fields: Vec<Value>) -> Value {
         "fields_arg":"--fields",
         "args":[
             arg("--limit","integer","Maximum records in this page"),
-            arg("--cursor","string","Opaque continuation URL from the previous page"),
+            arg("--cursor","string","Opaque continuation token from the previous page"),
             arg("--fields","string","Comma-separated output fields")
         ],
         "output_fields":fields
@@ -50,11 +50,12 @@ pub fn generate(command_filter: Option<&str>) -> Value {
         {
             let mut value = single(
                 "init",
-                "Configure an Entra public client and optionally sign in",
+                "Configure a Graph or classic Outlook desktop profile",
                 "idempotent",
                 vec![
                     field("profile", "string"),
                     field("client_id", "string"),
+                    field("backend", "string"),
                     field("config_path", "string"),
                     field("signed_in", "boolean"),
                     field("tenant", "string"),
@@ -62,6 +63,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 ],
             );
             value["args"] = json!([
+                {"name":"--backend","type":"string","enum":["graph","desktop"],"default":"graph","description":"Connection method"},
                 arg(
                     "--client-id",
                     "string",
@@ -109,7 +111,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 vec![
                     field("profile", "string"),
                     field("configured", "boolean"),
-                    field("signed_in", "boolean"),
+                    json!({"name":"signed_in","type":"boolean","nullable":true}),
                     field("read_only", "boolean"),
                     field("verified", "boolean"),
                     json!({"name":"identity","type":"object","nullable":true}),
@@ -118,7 +120,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             value["args"] = json!([arg(
                 "--offline",
                 "boolean",
-                "Inspect local credential state without contacting Microsoft Graph"
+                "Inspect local state without contacting Graph or launching Outlook"
             )]);
             value
         },
@@ -156,6 +158,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             vec![
                 field("profile", "string"),
                 field("client_id", "string"),
+                field("backend", "string"),
                 field("tenant", "string"),
                 field("read_only", "boolean"),
                 field("config_path", "string"),
@@ -211,13 +214,17 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                     field("from", "object"),
                 ],
             );
-            value["args"] = json!([required_arg("id", "string", "Immutable message ID")]);
+            value["args"] = json!([required_arg(
+                "id",
+                "string",
+                "Backend-specific message ID (desktop IDs may change after moves)"
+            )]);
             value
         },
         {
             let mut value = paged(
                 "mail search",
-                "Search messages across the mailbox or within one folder",
+                "Graph: mailbox/folder search; desktop: literal subject/sender search, inbox by default",
                 vec![
                     field("id", "string"),
                     field("subject", "string"),
@@ -231,7 +238,11 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             value["args"].as_array_mut().unwrap().splice(
                 0..0,
                 [
-                    required_arg("query", "string", "Search text or KQL expression"),
+                    required_arg(
+                        "query",
+                        "string",
+                        "Graph: text or KQL; desktop: literal text",
+                    ),
                     arg("--folder", "string", "Well-known folder name or folder ID"),
                 ],
             );
@@ -244,7 +255,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 "idempotent",
                 vec![field("id", "string"), field("isRead", "boolean")],
             );
-            value["args"] = json!([required_arg("id", "string", "Immutable message ID")]);
+            value["args"] = json!([required_arg("id", "string", "Immutable Graph message ID")]);
             value
         },
         {
@@ -254,7 +265,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 "idempotent",
                 vec![field("id", "string"), field("isRead", "boolean")],
             );
-            value["args"] = json!([required_arg("id", "string", "Immutable message ID")]);
+            value["args"] = json!([required_arg("id", "string", "Immutable Graph message ID")]);
             value
         },
         {
@@ -264,7 +275,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 "idempotent",
                 vec![field("deleted", "boolean"), field("message_id", "string")],
             );
-            value["args"] = json!([required_arg("id", "string", "Immutable message ID")]);
+            value["args"] = json!([required_arg("id", "string", "Immutable Graph message ID")]);
             value["confirmation_bypass_arg"] = json!("--yes");
             value
         },
@@ -348,7 +359,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             );
             value["args"].as_array_mut().unwrap().insert(
                 0,
-                required_arg("message_id", "string", "Immutable message ID"),
+                required_arg("message_id", "string", "Immutable Graph message ID"),
             );
             value
         },
@@ -387,7 +398,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 ],
             );
             value["args"] = json!([
-                required_arg("message_id", "string", "Immutable message ID"),
+                required_arg("message_id", "string", "Immutable Graph message ID"),
                 required_arg("attachment_id", "string", "Attachment ID"),
                 required_arg("path", "string", "Local destination path"),
                 arg("--force", "boolean", "Replace an existing destination file")
@@ -406,7 +417,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 ],
             );
             value["args"] = json!([
-                required_arg("message_id", "string", "Immutable message ID"),
+                required_arg("message_id", "string", "Immutable Graph message ID"),
                 required_arg("attachment_id", "string", "Attachment ID")
             ]);
             value["confirmation_bypass_arg"] = json!("--yes");
@@ -446,7 +457,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 ],
             );
             value["args"] = json!([
-                required_arg("id", "string", "Immutable message ID"),
+                required_arg("id", "string", "Immutable Graph message ID"),
                 required_arg("--body", "string", "Reply body, or - for stdin"),
                 arg("--all", "boolean", "Reply to all recipients")
             ]);
@@ -460,7 +471,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 vec![field("id", "string"), field("subject", "string")],
             );
             value["args"] = json!([
-                required_arg("id", "string", "Immutable message ID"),
+                required_arg("id", "string", "Immutable Graph message ID"),
                 required_arg(
                     "--destination",
                     "string",
@@ -516,14 +527,14 @@ pub fn generate(command_filter: Option<&str>) -> Value {
         {
             let mut value = single(
                 "doctor",
-                "Check configuration, credential storage, and Graph access",
+                "Check configuration and selected backend access",
                 "read_only",
                 vec![array_field("checks", "object"), field("healthy", "boolean")],
             );
             value["args"] = json!([arg(
                 "--offline",
                 "boolean",
-                "Check local state without contacting Microsoft Graph"
+                "Check local state without contacting Graph or launching Outlook"
             )]);
             value
         },
@@ -535,11 +546,29 @@ pub fn generate(command_filter: Option<&str>) -> Value {
                 array_field("supported", "string"),
                 array_field("planned", "string"),
                 field("api", "string"),
+                field("backends", "object"),
             ],
         ),
         json!({"name":"schema","description":"Emit the offline CLI Spec v0.3 contract","effects":"read_only","cardinality":"single","stdout_schema":{},"args":[arg("--command","string","Return only one complete command path")]}),
         json!({"name":"completions","description":"Generate a shell completion script","effects":"read_only","output_kind":"opaque","media_type":"text/plain","args":[required_arg("shell","string","Shell name")]}),
     ];
+    let mut folders = paged(
+        "mail folders",
+        "List mail folders; use --parent for child folders",
+        vec![
+            field("id", "string"),
+            field("displayName", "string"),
+            field("childFolderCount", "integer"),
+            field("totalItemCount", "integer"),
+            field("unreadItemCount", "integer"),
+        ],
+    );
+    folders["args"].as_array_mut().unwrap().push(arg(
+        "--parent",
+        "string",
+        "Parent folder name or ID; default is the default mailbox root",
+    ));
+    commands.push(folders);
     if let Some(filter) = command_filter {
         commands.retain(|command| command["name"] == filter);
     }
@@ -559,6 +588,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
         "commands":commands,
         "errors":error::ALL.iter().map(|contract| json!({"kind":contract.kind,"exit_code":contract.exit_code,"retryable":contract.retryable,"description":contract.description})).collect::<Vec<_>>(),
         "extensions":{
+            "backends":backend_capabilities(),
             "authentication":"delegated_oauth_device_code",
             "default_client_id":crate::config::DEFAULT_CLIENT_ID,
             "api":"Microsoft Graph v1.0",
@@ -566,6 +596,22 @@ pub fn generate(command_filter: Option<&str>) -> Value {
             "read_only_env":"OUTLOOK_READ_ONLY",
             "read_scopes":auth::READ_SCOPES.split_whitespace().collect::<Vec<_>>(),
             "write_scopes":auth::WRITE_SCOPES.split_whitespace().collect::<Vec<_>>()
+        }
+    })
+}
+
+pub fn backend_capabilities() -> Value {
+    json!({
+        "graph":{"authentication":"delegated_oauth_device_code","id_type":"ImmutableId","default":true},
+        "desktop":{
+            "authentication":"windows_outlook_profile",
+            "platforms":["windows","wsl"],
+            "requires":"classic Outlook and Windows PowerShell; new Outlook is unsupported",
+            "supported_commands":["mail folders","inbox","mail list","mail read","mail search","mail draft list","auth status","doctor"],
+            "id_type":"desktop: base64 JSON containing EntryID and StoreID; may change after moves",
+            "search":"case-insensitive literal subject/sender text in one folder; default inbox",
+            "pagination":"position-based; at most 1000 items scanned per page; mailbox changes can shift results",
+            "writes":false
         }
     })
 }

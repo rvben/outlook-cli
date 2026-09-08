@@ -30,7 +30,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Configure an Entra public-client app and optionally sign in
+    /// Configure a Graph or desktop profile
     Init(InitArgs),
     /// Manage delegated Microsoft authentication
     Auth {
@@ -61,7 +61,7 @@ pub enum Command {
         #[command(subcommand)]
         command: CalendarCommand,
     },
-    /// Diagnose configuration, credentials, and Graph access
+    /// Diagnose the selected backend and configuration
     Doctor {
         #[arg(long)]
         offline: bool,
@@ -79,6 +79,9 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct InitArgs {
+    /// Connection method: Microsoft Graph or classic Outlook on Windows/WSL
+    #[arg(long, value_enum, default_value = "graph")]
+    pub backend: crate::config::BackendKind,
     /// Override the bundled Microsoft Entra public-client application ID
     #[arg(long, env = "OUTLOOK_CLIENT_ID")]
     pub client_id: Option<String>,
@@ -101,7 +104,7 @@ pub enum AuthCommand {
     Logout,
     /// Verify authentication and show the selected profile's status
     Status {
-        /// Inspect local credential state without contacting Microsoft Graph
+        /// Inspect local state without contacting Graph or launching Outlook
         #[arg(long)]
         offline: bool,
     },
@@ -128,7 +131,7 @@ pub struct PageArgs {
     /// Maximum records in this page
     #[arg(long, default_value_t = 25, value_parser = clap::value_parser!(u16).range(1..=100))]
     pub limit: u16,
-    /// Opaque continuation URL from a previous response
+    /// Opaque continuation token from a previous response
     #[arg(long)]
     pub cursor: Option<String>,
     /// Comma-separated output fields
@@ -138,6 +141,13 @@ pub struct PageArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum MailCommand {
+    /// List mail folders (use --parent to list child folders)
+    Folders {
+        #[arg(long)]
+        parent: Option<String>,
+        #[command(flatten)]
+        page: PageArgs,
+    },
     /// List messages in a well-known folder or folder ID
     List {
         #[arg(long, default_value = "inbox")]
@@ -147,9 +157,9 @@ pub enum MailCommand {
     },
     /// Read one message
     Read { id: String },
-    /// Search messages using Microsoft Outlook search syntax
+    /// Search mail (Graph: Outlook syntax; desktop: literal subject/sender text)
     Search {
-        /// Search text or a supported KQL expression
+        /// Graph: text or KQL; desktop: literal text, inbox by default
         query: String,
         /// Restrict the search to a well-known folder or folder ID
         #[arg(long)]

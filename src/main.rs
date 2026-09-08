@@ -6,11 +6,13 @@ use serde::Serialize;
 use serde_json::Value;
 
 use outlook_cli::auth;
+use outlook_cli::backend::MailBackend;
 use outlook_cli::cli::{
     AttachmentCommand, AuthCommand, CalendarCommand, Cli, Command, ConfigCommand, DraftCommand,
     InitArgs, MailCommand, PageArgs, ProfileCommand,
 };
-use outlook_cli::config::{self, Profile};
+use outlook_cli::config::{self, BackendKind, Profile};
+use outlook_cli::desktop::{self, DesktopClient};
 use outlook_cli::error::AppError;
 use outlook_cli::graph::{self, GraphClient, Page};
 use outlook_cli::output::{Output, OutputFormat, print_error, structured_from_args};
@@ -64,6 +66,11 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
             )
         }
     })?;
+    if let Some((_, selected)) = config::configured_profile(profile)
+        && selected.backend == BackendKind::Desktop
+    {
+        require_desktop_command(&command, &selected)?;
+    }
     match command {
         Command::Init(args) => init(profile.unwrap_or("default"), args, out).await,
         Command::Auth { command } => auth_command(profile, command, out).await,
@@ -75,12 +82,27 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
         }
         Command::Inbox(page) => list_messages(profile, "inbox", page, out).await,
         Command::Mail {
+            command: MailCommand::Folders { parent, page },
+        } => {
+            if parent.as_ref().is_some_and(|p| p.trim().is_empty()) {
+                return Err(AppError::InvalidInput(
+                    "parent folder cannot be empty".into(),
+                ));
+            }
+            let mut result = MailBackend::connect(profile)
+                .await?
+                .folders(parent.as_deref(), page.limit, page.cursor.as_deref())
+                .await?;
+            graph::select_fields(&mut result, page.fields.as_deref())?;
+            render_page(&result, out, folder_line)
+        }
+        Command::Mail {
             command: MailCommand::List { folder, page },
         } => list_messages(profile, &folder, page, out).await,
         Command::Mail {
             command: MailCommand::Read { id },
         } => {
-            let value = client(profile).await?.message(&id).await?;
+            let value = MailBackend::connect(profile).await?.message(&id).await?;
             out.value(&value, || message_text(&value))
         }
         Command::Mail {
@@ -102,7 +124,7 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
             {
                 return Err(AppError::InvalidInput("folder cannot be empty".into()));
             }
-            let mut result = client(profile)
+            let mut result = MailBackend::connect(profile)
                 .await?
                 .search_messages(
                     &query,
@@ -251,6 +273,22 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
 }
 
 async fn init(profile_name: &str, args: InitArgs, out: Output) -> Result<(), AppError> {
+    if args.backend == BackendKind::Desktop {
+        let profile = Profile {
+            backend: BackendKind::Desktop,
+            client_id: String::new(),
+            tenant: String::new(),
+            read_only: args.read_only,
+        };
+        let connection = if args.no_login {
+            None
+        } else {
+            Some(DesktopClient.probe().await?)
+        };
+        let path = config::save(profile_name, profile)?;
+        let value = serde_json::json!({"profile":profile_name,"backend":"desktop","config_path":path,"signed_in":connection.is_some(),"read_only":args.read_only,"client_id":"","tenant":"","connection":connection});
+        return out.value(&value, || format!("Configured desktop profile '{profile_name}'. Uses the active classic Outlook profile on Windows.\nConfig: {}", path.display()));
+    }
     let client_id = match args.client_id {
         Some(value) if value.trim().is_empty() => {
             return Err(AppError::InvalidInput("client ID cannot be empty".into()));
@@ -262,6 +300,7 @@ async fn init(profile_name: &str, args: InitArgs, out: Output) -> Result<(), App
         return Err(AppError::InvalidInput("tenant cannot be empty".into()));
     }
     let profile = Profile {
+        backend: BackendKind::Graph,
         client_id,
         tenant: args.tenant,
         read_only: args.read_only,
@@ -274,6 +313,7 @@ async fn init(profile_name: &str, args: InitArgs, out: Output) -> Result<(), App
     };
     #[derive(Serialize)]
     struct Result<'a> {
+        backend: &'static str,
         profile: &'a str,
         client_id: &'a str,
         config_path: String,
@@ -282,6 +322,7 @@ async fn init(profile_name: &str, args: InitArgs, out: Output) -> Result<(), App
         read_only: bool,
     }
     let result = Result {
+        backend: "graph",
         profile: profile_name,
         client_id: &profile.client_id,
         config_path: path.display().to_string(),
@@ -303,6 +344,18 @@ async fn auth_command(
     command: AuthCommand,
     out: Output,
 ) -> Result<(), AppError> {
+    if let Some((name, profile)) = config::configured_profile(profile_arg)
+        && profile.backend == BackendKind::Desktop
+    {
+        return match command {
+            AuthCommand::Status { offline } => {
+                let connection = if offline { None } else { Some(DesktopClient.probe().await?) };
+                let value = serde_json::json!({"profile":name,"backend":"desktop","configured":true,"signed_in":connection.as_ref().map(|_| true),"read_only":profile.read_only,"verified":connection.is_some(),"identity":null,"connection":connection,"authentication":"windows_outlook_profile"});
+                out.value(&value, || format!("Profile: {name}\nBackend: desktop\nVerified: {}\nAuthentication is managed by classic Outlook on Windows.", yes_no(connection.is_some())))
+            }
+            _ => Err(AppError::Unsupported("desktop authentication is managed by classic Outlook on Windows; use `outlook auth status` or `outlook doctor` to verify it".into())),
+        };
+    }
     match command {
         AuthCommand::Login => {
             let (name, profile, initialized) = config::load_or_initialize(profile_arg)?;
@@ -365,9 +418,10 @@ fn profile_command(command: ProfileCommand, yes: bool, out: Output) -> Result<()
                             .iter()
                             .map(|profile| {
                                 format!(
-                                    "{} {}  {}",
+                                    "{} {}  {}  {}",
                                     if profile.active { "*" } else { " " },
                                     profile.name,
+                                    profile.backend.as_str(),
                                     profile.tenant
                                 )
                             })
@@ -390,7 +444,10 @@ fn profile_command(command: ProfileCommand, yes: bool, out: Output) -> Result<()
                     "profile removal requires --yes".into(),
                 ));
             }
-            auth::logout(&name)?;
+            let (_, selected) = config::load(Some(&name))?;
+            if selected.backend == BackendKind::Graph {
+                auth::logout(&name)?;
+            }
             if !config::remove_profile(&name)? {
                 return Err(AppError::InvalidInput(format!(
                     "profile '{name}' is not configured"
@@ -415,10 +472,11 @@ fn config_command(
         }),
         ConfigCommand::Show => {
             let (name, profile) = config::load(profile_arg)?;
-            let value = serde_json::json!({"profile":name,"client_id":profile.client_id,"tenant":profile.tenant,"read_only":profile.read_only,"config_path":config::path()});
+            let value = serde_json::json!({"profile":name,"backend":profile.backend,"client_id":profile.client_id,"tenant":profile.tenant,"read_only":profile.read_only,"config_path":config::path()});
             out.value(&value, || {
                 format!(
-                    "Profile: {name}\nTenant: {}\nClient ID: {}\nRead only: {}\nConfig: {}",
+                    "Profile: {name}\nBackend: {}\nTenant: {}\nClient ID: {}\nRead only: {}\nConfig: {}",
+                    profile.backend.as_str(),
                     profile.tenant,
                     profile.client_id,
                     yes_no(profile.read_only),
@@ -431,12 +489,14 @@ fn config_command(
 
 async fn client(profile_arg: Option<&str>) -> Result<GraphClient, AppError> {
     let (name, profile) = config::load(profile_arg)?;
+    require_graph(&profile)?;
     Ok(GraphClient::new(auth::access_token(&name, &profile).await?))
 }
 
 async fn writable_client(profile_arg: Option<&str>) -> Result<GraphClient, AppError> {
     let (name, profile) = config::load(profile_arg)?;
     profile.require_writable()?;
+    require_graph(&profile)?;
     Ok(GraphClient::new(auth::access_token(&name, &profile).await?))
 }
 
@@ -446,7 +506,7 @@ async fn list_messages(
     page: PageArgs,
     out: Output,
 ) -> Result<(), AppError> {
-    let mut result = client(profile)
+    let mut result = MailBackend::connect(profile)
         .await?
         .messages(folder, page.limit, page.cursor.as_deref())
         .await?;
@@ -709,6 +769,37 @@ fn render_page(page: &Page, out: Output, line: fn(&Value) -> String) -> Result<(
 }
 
 async fn doctor(profile_arg: Option<&str>, offline: bool, out: Output) -> Result<(), AppError> {
+    if let Some((name, profile)) = config::configured_profile(profile_arg)
+        && profile.backend == BackendKind::Desktop
+    {
+        let check = if offline {
+            desktop::powershell()
+                .map(|path| serde_json::json!({"powershell":path,"com_verified":false}))
+        } else {
+            DesktopClient.probe().await
+        };
+        let (healthy, detail) = match check {
+            Ok(value) => (true, value),
+            Err(error) => (false, serde_json::json!(error.to_string())),
+        };
+        let value = serde_json::json!({"profile":name,"backend":"desktop","healthy":healthy,"offline":offline,"checks":[{"name":"classic_outlook","ok":healthy,"detail":detail}]});
+        return out.value(&value, || {
+            format!(
+                "Desktop {}: {}{}",
+                if healthy {
+                    "check passed"
+                } else {
+                    "check failed"
+                },
+                detail,
+                if offline {
+                    " (COM was not checked)"
+                } else {
+                    ""
+                }
+            )
+        });
+    }
     let configured = config::configured_profile(profile_arg);
     let name = configured
         .as_ref()
@@ -747,9 +838,10 @@ fn capabilities(out: Output) -> Result<(), AppError> {
     let value = serde_json::json!({
         "supported":["delegated device-code OAuth","personal and work/school accounts","mail listing, reading, search, and field projection","sending, replying, moving, deleting, and read-state updates","draft lifecycle","attachment upload and download up to 150 MiB","calendar agenda and event creation","immutable Outlook IDs","read-only profiles","CLI Spec v0.3"],
         "planned":["browser PKCE login","keyboard-first TUI","HTML composition and inline attachments","meeting responses","contacts and categories","delta synchronization and local cache"],
-        "api":"Microsoft Graph v1.0"
+        "api":"Microsoft Graph v1.0",
+        "backends":schema::backend_capabilities()
     });
-    out.value(&value, || "Supported: full mail lifecycle, attachments, calendar essentials, safe automation contracts, and device-code OAuth.\nPlanned: TUI, rich composition, meeting responses, contacts, and delta sync.".into())
+    out.value(&value, || "Graph: full mail lifecycle, attachments, calendar essentials, and device-code OAuth.\nDesktop (Windows/WSL, classic Outlook): folders, mail listing/reading, literal subject/sender search, and draft listing.\nPlanned: TUI, rich composition, meeting responses, contacts, and delta sync.".into())
 }
 
 fn read_body(raw: &str) -> Result<String, AppError> {
@@ -898,5 +990,65 @@ fn confirm_destructive(yes: bool, prompt: &str) -> Result<(), AppError> {
         Err(AppError::ConfirmationRequired(
             "operation cancelled; no changes were made".into(),
         ))
+    }
+}
+
+fn folder_line(value: &Value) -> String {
+    format!(
+        "{}  {}",
+        string(value, "/displayName"),
+        string(value, "/id")
+    )
+}
+
+fn require_graph(profile: &Profile) -> Result<(), AppError> {
+    if profile.backend == BackendKind::Desktop {
+        Err(AppError::Unsupported(
+            "this operation is not supported by the desktop backend".into(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+// Reject unsupported desktop operations before prompts, stdin reads or file access.
+fn require_desktop_command(command: &Command, profile: &Profile) -> Result<(), AppError> {
+    let write = match command {
+        Command::Calendar { command } => matches!(command, CalendarCommand::Create { .. }),
+        Command::Mail { command } => match command {
+            MailCommand::Folders { .. }
+            | MailCommand::List { .. }
+            | MailCommand::Read { .. }
+            | MailCommand::Search { .. } => false,
+            MailCommand::Draft { command } => !matches!(command, DraftCommand::List(_)),
+            MailCommand::Attachment { command } => matches!(
+                command,
+                AttachmentCommand::Add { .. } | AttachmentCommand::Delete { .. }
+            ),
+            _ => true,
+        },
+        _ => false,
+    };
+    if write {
+        profile.require_writable()?;
+    }
+    let supported = match command {
+        Command::Whoami | Command::Calendar { .. } => false,
+        Command::Mail { command } => matches!(
+            command,
+            MailCommand::Folders { .. }
+                | MailCommand::List { .. }
+                | MailCommand::Read { .. }
+                | MailCommand::Search { .. }
+                | MailCommand::Draft {
+                    command: DraftCommand::List(_)
+                }
+        ),
+        _ => true,
+    };
+    if supported {
+        Ok(())
+    } else {
+        require_graph(profile)
     }
 }

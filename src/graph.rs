@@ -12,7 +12,7 @@ const SMALL_ATTACHMENT_LIMIT: usize = 3 * 1024 * 1024;
 pub const MAX_ATTACHMENT_SIZE: usize = 150 * 1024 * 1024;
 const UPLOAD_CHUNK_SIZE: usize = 10 * 320 * 1024;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Page {
     pub items: Vec<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -53,6 +53,31 @@ impl GraphClient {
         url.query_pairs_mut()
             .append_pair("$select", "id,displayName,userPrincipalName,mail");
         self.get_value(url, false, None, false).await
+    }
+
+    pub async fn folders(
+        &self,
+        parent: Option<&str>,
+        limit: u16,
+        cursor: Option<&str>,
+    ) -> Result<Page, AppError> {
+        let first = if let Some(cursor) = cursor {
+            self.cursor(cursor)?
+        } else {
+            let path = match parent {
+                Some(parent) => format!("me/mailFolders/{}/childFolders", segment(parent)),
+                None => "me/mailFolders".into(),
+            };
+            let mut url = self.endpoint(&path)?;
+            url.query_pairs_mut()
+                .append_pair("$top", &limit.to_string())
+                .append_pair(
+                    "$select",
+                    "id,displayName,parentFolderId,childFolderCount,totalItemCount,unreadItemCount",
+                );
+            url
+        };
+        self.get_page(first, limit, None).await
     }
 
     pub async fn messages(

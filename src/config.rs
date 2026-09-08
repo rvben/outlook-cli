@@ -10,8 +10,28 @@ pub const DEFAULT_TENANT: &str = "common";
 /// The maintained multitenant public-client registration shipped with outlook-cli.
 pub const DEFAULT_CLIENT_ID: &str = "6b126a3c-899a-4767-a88f-120522bae38b";
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum BackendKind {
+    #[default]
+    Graph,
+    Desktop,
+}
+
+impl BackendKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Graph => "graph",
+            Self::Desktop => "desktop",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
+    #[serde(default)]
+    pub backend: BackendKind,
+    #[serde(default)]
     pub client_id: String,
     #[serde(default = "default_tenant")]
     pub tenant: String,
@@ -39,6 +59,7 @@ struct ConfigFile {
 
 #[derive(Debug, Serialize)]
 pub struct ProfileSummary {
+    pub backend: BackendKind,
     pub name: String,
     pub active: bool,
     pub tenant: String,
@@ -109,18 +130,23 @@ pub fn load(requested: Option<&str>) -> Result<(String, Profile), AppError> {
         .or(config.active_profile)
         .unwrap_or_else(|| "default".into());
     let stored = config.profiles.get(&name);
-    let client_id = std::env::var("OUTLOOK_CLIENT_ID")
-        .ok()
-        .or_else(|| stored.map(|profile| profile.client_id.clone()))
-        .ok_or_else(|| {
-            AppError::InvalidInput(format!(
+    let backend = stored.map(|p| p.backend).unwrap_or_default();
+    let (client_id, tenant) = if backend == BackendKind::Desktop {
+        (String::new(), String::new())
+    } else {
+        let client_id = std::env::var("OUTLOOK_CLIENT_ID")
+            .ok()
+            .or_else(|| stored.map(|profile| profile.client_id.clone()))
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| AppError::InvalidInput(format!(
                 "profile '{name}' is not configured; run `outlook init` or set OUTLOOK_CLIENT_ID"
-            ))
-        })?;
-    let tenant = std::env::var("OUTLOOK_TENANT")
-        .ok()
-        .or_else(|| stored.map(|profile| profile.tenant.clone()))
-        .unwrap_or_else(default_tenant);
+            )))?;
+        let tenant = std::env::var("OUTLOOK_TENANT")
+            .ok()
+            .or_else(|| stored.map(|profile| profile.tenant.clone()))
+            .unwrap_or_else(default_tenant);
+        (client_id, tenant)
+    };
     let read_only = match std::env::var("OUTLOOK_READ_ONLY") {
         Ok(value) => parse_bool("OUTLOOK_READ_ONLY", &value)?,
         Err(std::env::VarError::NotPresent) => stored.is_some_and(|profile| profile.read_only),
@@ -133,6 +159,7 @@ pub fn load(requested: Option<&str>) -> Result<(String, Profile), AppError> {
     Ok((
         name,
         Profile {
+            backend,
             client_id,
             tenant,
             read_only,
@@ -190,6 +217,7 @@ pub fn load_or_initialize(requested: Option<&str>) -> Result<(String, Profile, b
         }
     };
     let profile = Profile {
+        backend: BackendKind::Graph,
         client_id,
         tenant,
         read_only,
@@ -208,6 +236,7 @@ pub fn profile_summaries() -> Result<Vec<ProfileSummary>, AppError> {
         .profiles
         .iter()
         .map(|(name, profile)| ProfileSummary {
+            backend: profile.backend,
             name: name.clone(),
             active: config.active_profile.as_deref() == Some(name.as_str()),
             tenant: profile.tenant.clone(),

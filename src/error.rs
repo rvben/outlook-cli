@@ -4,6 +4,10 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("{0}")]
+    Unsupported(String),
+    #[error("{0}")]
+    Desktop(String),
+    #[error("{0}")]
     InvalidInput(String),
     #[error("{0}")]
     Auth(String),
@@ -36,6 +40,18 @@ pub struct ErrorContract {
 }
 
 pub const ALL: &[ErrorContract] = &[
+    ErrorContract {
+        kind: "unsupported",
+        exit_code: 2,
+        retryable: false,
+        description: "The selected backend does not support this operation",
+    },
+    ErrorContract {
+        kind: "desktop_error",
+        exit_code: 5,
+        retryable: false,
+        description: "The classic Outlook desktop bridge failed or timed out",
+    },
     ErrorContract {
         kind: "invalid_input",
         exit_code: 2,
@@ -101,6 +117,8 @@ pub const ALL: &[ErrorContract] = &[
 impl AppError {
     pub fn contract(&self) -> ErrorContract {
         let kind = match self {
+            Self::Unsupported(_) => "unsupported",
+            Self::Desktop(_) => "desktop_error",
             Self::InvalidInput(_) => "invalid_input",
             Self::Auth(_) => "auth",
             Self::ReadOnly(_) => "read_only",
