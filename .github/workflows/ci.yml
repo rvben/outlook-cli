@@ -22,7 +22,18 @@ jobs:
           toolchain: "1.90.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Install Linux credential store
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+      - name: Test with Linux credential store
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            cargo test --locked --all-targets
+          '
       - run: cargo test --locked --all-targets
+        if: runner.os != 'Linux'
 
   quality:
     name: Formatting and lints
