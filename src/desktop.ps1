@@ -45,6 +45,44 @@ function Message($mail, $storeId, $detail) {
     if ($detail) { $result.body = @{contentType='text'; content=[string]$mail.Body} }
     return $result
 }
+function Mail($id) {
+    $mail = Keep ($script:ns.GetItemFromID([string]$id.entry, [string]$id.store))
+    if ($mail.Class -ne 43) { Invalid 'The requested item is not an email message.' }
+    return ,$mail
+}
+function Invalid($message) { throw [ArgumentException]::new($message) }
+function RequireDraft($mail) {
+    if ($mail.Sent -or $mail.Submitted) { Invalid 'The requested message is not an editable draft.' }
+}
+function EditMail($mail, $request) {
+    $recipients = Keep ($mail.Recipients)
+    $type = 0
+    foreach ($field in @('to','cc','bcc')) {
+        $type++
+        if ($null -eq $request.$field) { continue }
+        for ($i = $recipients.Count; $i -ge 1; $i--) {
+            $recipient = Keep ($recipients.Item($i))
+            if ($recipient.Type -eq $type) { $recipients.Remove($i) }
+        }
+        foreach ($address in $request.$field) {
+            $recipient = Keep ($recipients.Add([string]$address))
+            $recipient.Type = $type
+        }
+    }
+    if ($null -ne $request.subject) { $mail.Subject = [string]$request.subject }
+    if ($null -ne $request.body) { $mail.BodyFormat = 1; $mail.Body = [string]$request.body }
+}
+function SendMail($mail) {
+    $recipients = Keep ($mail.Recipients)
+    if ($recipients.Count -eq 0 -or -not $recipients.ResolveAll()) {
+        Invalid 'The message needs recipients that Outlook can resolve.'
+    }
+    $mail.Send()
+}
+function SavedMessage($mail) {
+    $parent = Keep ($mail.Parent)
+    return (Message $mail $parent.StoreID $true)
+}
 try {
     $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
     $app = Keep (New-Object -ComObject Outlook.Application)
@@ -56,9 +94,58 @@ try {
             $result = @{available=$true; outlookProfile=[string]$script:ns.CurrentProfileName; defaultStore=[string]$store.DisplayName; rootFolderId=(Identifier $root.EntryID $root.StoreID)}
         }
         'read' {
-            $mail = Keep ($script:ns.GetItemFromID([string]$request.id.entry, [string]$request.id.store))
-            if ($mail.Class -ne 43) { throw 'The requested item is not an email message.' }
+            $mail = Mail $request.id
             $result = Message $mail $request.id.store $true
+        }
+        { $_ -in 'send','draft_create' } {
+            $mail = Keep ($app.CreateItem(0))
+            EditMail $mail $request
+            if ($request.operation -eq 'send') {
+                SendMail $mail
+                $result = @{sent=$true; to=@($request.to); cc=@($request.cc); bcc=@($request.bcc); subject=[string]$request.subject}
+            } else {
+                $mail.Save()
+                $result = SavedMessage $mail
+            }
+        }
+        { $_ -in 'mark_read','move','delete','reply','draft_update','draft_send','draft_delete' } {
+            $mail = Mail $request.id
+            $id = Identifier $request.id.entry $request.id.store
+            if ($request.operation -like 'draft_*') { RequireDraft $mail }
+            switch ($request.operation) {
+                'mark_read' {
+                    $mail.UnRead = -not [bool]$request.read
+                    $mail.Save()
+                    $result = SavedMessage $mail
+                }
+                'move' {
+                    $destination = Folder $request.folder
+                    if ($destination.DefaultItemType -ne 0) { Invalid 'The destination is not a mail folder.' }
+                    $moved = Keep ($mail.Move($destination))
+                    $result = SavedMessage $moved
+                }
+                { $_ -in 'delete','draft_delete' } {
+                    $mail.Delete()
+                    $result = @{deleted=$true; message_id=$id}
+                }
+                'reply' {
+                    if ($request.all) { $reply = Keep ($mail.ReplyAll()) }
+                    else { $reply = Keep ($mail.Reply()) }
+                    $reply.BodyFormat = 1
+                    $reply.Body = [string]$request.body + "`r`n`r`n" + [string]$reply.Body
+                    SendMail $reply
+                    $result = @{sent=$true; message_id=$id; reply_all=[bool]$request.all}
+                }
+                'draft_update' {
+                    EditMail $mail $request
+                    $mail.Save()
+                    $result = SavedMessage $mail
+                }
+                'draft_send' {
+                    SendMail $mail
+                    $result = @{sent=$true; draft_id=$id}
+                }
+            }
         }
         { $_ -in 'list','search','folders' } {
             $folder = Folder $request.folder
@@ -108,10 +195,13 @@ try {
     $kind = 'desktop_error'
     $exception = $_.Exception
     while ($null -ne $exception) {
+        if ($exception -is [ArgumentException]) { $kind = 'invalid_input' }
         if ($exception.HResult -eq -2147221233) { $kind = 'not_found' }
         $exception = $exception.InnerException
     }
-    $failure = @{error=@{kind=$kind; message=($_.Exception.Message + ' Check that classic Outlook is installed and its Windows profile is signed in; new Outlook is unsupported.')}}
+    $message = $_.Exception.Message
+    if ($kind -eq 'desktop_error') { $message += ' Check classic Outlook and its Windows profile for security prompts. A write may have completed; inspect Outlook before retrying.' }
+    $failure = @{error=@{kind=$kind; message=$message}}
     [Console]::Out.WriteLine(($failure | ConvertTo-Json -Depth 4 -Compress))
     exit 1
 } finally {

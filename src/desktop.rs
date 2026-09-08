@@ -98,6 +98,61 @@ fn offset(cursor: Option<&str>, expected: &Cursor) -> Result<u32, AppError> {
 }
 
 impl DesktopClient {
+    pub async fn send_mail(
+        &self,
+        to: &[String],
+        cc: &[String],
+        bcc: &[String],
+        subject: &str,
+        body: &str,
+    ) -> Result<Value, AppError> {
+        self.run(json!({"operation":"send", "to":to, "cc":cc, "bcc":bcc, "subject":subject, "body":body})).await
+    }
+    pub async fn create_draft(
+        &self,
+        to: &[String],
+        cc: &[String],
+        bcc: &[String],
+        subject: &str,
+        body: &str,
+    ) -> Result<Value, AppError> {
+        self.run(json!({"operation":"draft_create", "to":to, "cc":cc, "bcc":bcc, "subject":subject, "body":body})).await
+    }
+    pub async fn update_draft(
+        &self,
+        id: &str,
+        to: Option<&[String]>,
+        cc: Option<&[String]>,
+        bcc: Option<&[String]>,
+        subject: Option<&str>,
+        body: Option<&str>,
+    ) -> Result<Value, AppError> {
+        self.run(json!({"operation":"draft_update", "id":decode_id(id)?, "to":to, "cc":cc, "bcc":bcc, "subject":subject, "body":body})).await
+    }
+    pub async fn send_draft(&self, id: &str) -> Result<Value, AppError> {
+        self.run(json!({"operation":"draft_send", "id":decode_id(id)?}))
+            .await
+    }
+    pub async fn reply(&self, id: &str, body: &str, all: bool) -> Result<Value, AppError> {
+        self.run(json!({"operation":"reply", "id":decode_id(id)?, "body":body, "all":all}))
+            .await
+    }
+    pub async fn move_message(&self, id: &str, destination: &str) -> Result<Value, AppError> {
+        self.run(json!({"operation":"move", "id":decode_id(id)?, "folder":folder_value(Some(destination))?})).await
+    }
+    pub async fn set_message_read(&self, id: &str, read: bool) -> Result<Value, AppError> {
+        self.run(json!({"operation":"mark_read", "id":decode_id(id)?, "read":read}))
+            .await
+    }
+    pub async fn delete_message(&self, id: &str) -> Result<Value, AppError> {
+        self.run(json!({"operation":"delete", "id":decode_id(id)?}))
+            .await
+    }
+    pub async fn delete_draft(&self, id: &str) -> Result<Value, AppError> {
+        self.run(json!({"operation":"draft_delete", "id":decode_id(id)?}))
+            .await
+    }
+
     pub async fn probe(&self) -> Result<Value, AppError> {
         self.run(json!({"operation":"probe"})).await
     }
@@ -209,7 +264,7 @@ async fn run_bridge(
             .map_err(|e| AppError::Desktop(format!("cannot wait for bridge: {e}")))
     };
     let output = tokio::time::timeout(timeout, operation).await
-        .map_err(|_| AppError::Desktop("classic Outlook did not respond within the bridge timeout; check Windows for Outlook profile or security prompts".into()))??;
+        .map_err(|_| AppError::Desktop("classic Outlook did not respond within the bridge timeout; check Windows for Outlook profile or security prompts. A write may already have completed; inspect Outlook before retrying".into()))??;
     parse_output(output.status.success(), &output.stdout, &output.stderr)
 }
 
@@ -229,6 +284,8 @@ fn parse_output(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<Value, Ap
             .to_owned();
         return Err(if error["kind"] == "not_found" {
             AppError::NotFound(message)
+        } else if error["kind"] == "invalid_input" {
+            AppError::InvalidInput(message)
         } else {
             AppError::Desktop(message)
         });
@@ -245,6 +302,12 @@ fn parse_output(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<Value, Ap
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_script_fits_windows_command_line() {
+        let encoded_len = SCRIPT.encode_utf16().count().saturating_mul(2).div_ceil(3) * 4;
+        assert!(encoded_len < 32000, "leave room for executable and flags");
+    }
 
     #[test]
     fn ids_require_both_hex_entry_and_store_ids() {

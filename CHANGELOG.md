@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.2 - 2026-09-08
+
+### Added
+
+- Desktop mail send, reply/reply-all, move, delete, and mark-read/unread actions.
+- Desktop draft creation, partial updates, sending, and deletion, including recipient clearing and checks against modifying sent or submitted messages.
+- Improved terminal mail views and command help.
+
+### Fixed
+
+- Short output-format flags now control parse-error formatting.
+
+### Compatibility
+
+- Desktop writes respect read-only profiles and deletion confirmation; moves return the new message ID.
+- Attachments and calendar commands remain Graph-only.
+- Desktop bridge tests pass with mock Outlook objects; live Windows/WSL COM validation remains outstanding.
+
 ## 0.2.1 - 2026-09-08
 
 ### Added

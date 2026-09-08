@@ -115,9 +115,19 @@ Well-known folders resolve in the default store. `mail folders` lists its top-le
 mail folders; use `--parent` with a returned ID to browse further. Supported names
 are `inbox`, `sentitems`, `deleteditems`, `outbox`, `drafts`, and `junkemail`.
 
-Desktop currently supports folder listing, inbox/folder mail listing, message
-reading, search, and draft listing. Writes, attachments, calendar commands, and
-`whoami` return `unsupported`; read-only profiles also retain their write guard.
+Desktop supports folder and message listing, reading, search, send, reply/reply-all,
+move, delete, mark-read/unread, and draft list/create/update/send/delete. Attachments,
+calendar commands, and `whoami` return `unsupported`. Read-only profiles block writes;
+deleting messages or drafts requires confirmation (or `--yes`).
+
+New messages and replies use plain text and Outlook's configured sending account.
+A successful send means Outlook accepted the message for sending; offline Outlook
+may queue it. Draft updates preserve omitted fields; `--clear-to`, `--clear-cc`,
+and `--clear-bcc` remove the corresponding recipients. Draft update/send/delete
+reject sent messages and messages already submitted for sending. Moves return the
+message's new desktop ID; use that ID for subsequent commands. Delete follows
+Outlook's behavior, including permanent deletion from Deleted Items. If a write
+times out or the bridge fails, check Outlook before retrying: it may have completed.
 There is no automatic fallback to Graph. Existing profiles without a backend field
 continue to use Graph, which remains the default for `init`.
 

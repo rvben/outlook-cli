@@ -67,17 +67,6 @@ fn unsupported_desktop_commands_fail_before_confirmation_or_reading_stdin() {
         .assert()
         .success();
     for args in [
-        vec!["mail", "delete", "id"],
-        vec![
-            "mail",
-            "send",
-            "--to",
-            "person@example.com",
-            "--subject",
-            "Hello",
-            "--body",
-            "-",
-        ],
         vec![
             "mail",
             "attachment",
@@ -104,11 +93,33 @@ fn desktop_read_only_policy_is_enforced_before_backend_access() {
         .args(["init", "--backend", "desktop", "--read-only", "--no-login"])
         .assert()
         .success();
-    cli(&temp)
-        .args(["mail", "mark-read", "id"])
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains("\"kind\":\"read_only\""));
+    for args in [
+        vec!["mail", "mark-read", "id"],
+        vec!["mail", "mark-unread", "id"],
+        vec!["mail", "move", "id", "--destination", "trash"],
+        vec!["mail", "delete", "id"],
+        vec!["mail", "reply", "id", "--body", "-"],
+        vec![
+            "mail",
+            "send",
+            "--to",
+            "person@example.com",
+            "--subject",
+            "Hello",
+            "--body",
+            "-",
+        ],
+        vec!["mail", "draft", "create", "--body", "-"],
+        vec!["mail", "draft", "update", "id", "--body", "-"],
+        vec!["mail", "draft", "send", "id"],
+        vec!["mail", "draft", "delete", "id"],
+    ] {
+        cli(&temp)
+            .args(args)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("\"kind\":\"read_only\""));
+    }
 }
 
 #[test]
@@ -120,6 +131,14 @@ fn desktop_rejects_foreign_ids_cursors_and_empty_queries_before_com_access() {
         .success();
     for args in [
         vec!["mail", "read", "graph-id"],
+        vec!["mail", "mark-read", "graph-id"],
+        vec!["mail", "mark-unread", "graph-id"],
+        vec!["mail", "move", "graph-id", "--destination", "inbox"],
+        vec!["mail", "reply", "graph-id", "--body", "Hello"],
+        vec!["mail", "delete", "graph-id", "--yes"],
+        vec!["mail", "draft", "update", "graph-id", "--clear-to"],
+        vec!["mail", "draft", "send", "graph-id"],
+        vec!["mail", "draft", "delete", "graph-id", "--yes"],
         vec!["inbox", "--cursor", "https://graph.microsoft.com/next"],
         vec!["mail", "search", ""],
         vec!["mail", "list", "--folder", "unknown"],
@@ -188,4 +207,25 @@ fn minimal_desktop_profile_ignores_graph_environment_configuration() {
     assert_eq!(profile["backend"], "desktop");
     assert_eq!(profile["client_id"], "");
     assert_eq!(profile["tenant"], "");
+}
+
+#[test]
+fn desktop_deletes_still_require_confirmation() {
+    let temp = tempfile::tempdir().unwrap();
+    cli(&temp)
+        .args(["init", "--backend", "desktop", "--no-login"])
+        .assert()
+        .success();
+    for args in [
+        vec!["mail", "delete", "id"],
+        vec!["mail", "draft", "delete", "id"],
+    ] {
+        cli(&temp)
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "\"kind\":\"confirmation_required\"",
+            ));
+    }
 }

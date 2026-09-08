@@ -608,11 +608,11 @@ pub fn backend_capabilities() -> Value {
             "authentication":"windows_outlook_profile",
             "platforms":["windows","wsl"],
             "requires":"classic Outlook and Windows PowerShell; new Outlook is unsupported",
-            "supported_commands":["mail folders","inbox","mail list","mail read","mail search","mail draft list","auth status","doctor"],
+            "supported_commands":["mail folders","inbox","mail list","mail read","mail search","mail draft list","mail send","mail reply","mail move","mail delete","mail mark-read","mail mark-unread","mail draft create","mail draft update","mail draft send","mail draft delete","auth status","doctor"],
             "id_type":"desktop: base64 JSON containing EntryID and StoreID; may change after moves",
             "search":"case-insensitive literal subject/sender text in one folder; default inbox",
             "pagination":"position-based; at most 1000 items scanned per page; mailbox changes can shift results",
-            "writes":false
+            "writes":true
         }
     })
 }

@@ -187,8 +187,8 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
                 return Err(AppError::InvalidInput("subject cannot be empty".into()));
             }
             let body = read_body(&body)?;
-            let graph = writable_client(profile).await?;
-            let value = graph.send_mail(&to, &cc, &bcc, &subject, &body).await?;
+            let backend = MailBackend::connect_writable(profile).await?;
+            let value = backend.send_mail(&to, &cc, &bcc, &subject, &body).await?;
             out.value(&value, || format!("Sent “{subject}” to {}", to.join(", ")))
         }
         Command::Mail {
@@ -198,7 +198,7 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
             if body.trim().is_empty() {
                 return Err(AppError::InvalidInput("reply body cannot be empty".into()));
             }
-            let value = writable_client(profile)
+            let value = MailBackend::connect_writable(profile)
                 .await?
                 .reply(&id, &body, all)
                 .await?;
@@ -216,7 +216,7 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
             if destination.trim().is_empty() {
                 return Err(AppError::InvalidInput("destination cannot be empty".into()));
             }
-            let value = writable_client(profile)
+            let value = MailBackend::connect_writable(profile)
                 .await?
                 .move_message(&id, &destination)
                 .await?;
@@ -226,7 +226,10 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
             command: MailCommand::Delete { id },
         } => {
             confirm_destructive(yes, "Delete this message?")?;
-            let value = writable_client(profile).await?.delete_message(&id).await?;
+            let value = MailBackend::connect_writable(profile)
+                .await?
+                .delete_message(&id)
+                .await?;
             out.value(&value, || "Deleted message.".into())
         }
         Command::Mail {
@@ -548,7 +551,7 @@ async fn set_message_read(
     read: bool,
     out: Output,
 ) -> Result<(), AppError> {
-    let value = writable_client(profile)
+    let value = MailBackend::connect_writable(profile)
         .await?
         .set_message_read(id, read)
         .await?;
@@ -580,7 +583,7 @@ async fn draft_command(
             validate_addresses(&cc)?;
             validate_addresses(&bcc)?;
             let body = read_body(&body)?;
-            let value = writable_client(profile)
+            let value = MailBackend::connect_writable(profile)
                 .await?
                 .create_draft(&to, &cc, &bcc, &subject, &body)
                 .await?;
@@ -616,19 +619,25 @@ async fn draft_command(
                     "draft update requires at least one field".into(),
                 ));
             }
-            let value = writable_client(profile)
+            let value = MailBackend::connect_writable(profile)
                 .await?
                 .update_draft(&id, to, cc, bcc, subject.as_deref(), body.as_deref())
                 .await?;
             out.value(&value, || "Updated draft.".into())
         }
         DraftCommand::Send { id } => {
-            let value = writable_client(profile).await?.send_draft(&id).await?;
+            let value = MailBackend::connect_writable(profile)
+                .await?
+                .send_draft(&id)
+                .await?;
             out.value(&value, || "Sent draft.".into())
         }
         DraftCommand::Delete { id } => {
             confirm_destructive(yes, "Delete this draft?")?;
-            let value = writable_client(profile).await?.delete_message(&id).await?;
+            let value = MailBackend::connect_writable(profile)
+                .await?
+                .delete_draft(&id)
+                .await?;
             out.value(&value, || "Deleted draft.".into())
         }
     }
@@ -969,16 +978,7 @@ fn require_desktop_command(command: &Command, profile: &Profile) -> Result<(), A
     }
     let supported = match command {
         Command::Whoami | Command::Calendar { .. } => false,
-        Command::Mail { command } => matches!(
-            command,
-            MailCommand::Folders { .. }
-                | MailCommand::List { .. }
-                | MailCommand::Read { .. }
-                | MailCommand::Search { .. }
-                | MailCommand::Draft {
-                    command: DraftCommand::List(_)
-                }
-        ),
+        Command::Mail { command } => !matches!(command, MailCommand::Attachment { .. }),
         _ => true,
     };
     if supported {
