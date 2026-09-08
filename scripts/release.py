@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -133,9 +134,11 @@ def verify(directory, tag=None):
 
 def notes():
     text = (ROOT / 'CHANGELOG.md').read_text()
-    start = text.index(f'## {VERSION} - ')
-    end = text.find('\n## ', start + 1)
-    print(text[start:end if end != -1 else None].strip())
+    heading = re.search(rf'^## \[{re.escape(VERSION)}\](?:\([^\n]*\))?[^\n]*$', text, re.M)
+    if heading is None:
+        raise ValueError(f'No changelog section for {VERSION}')
+    end = text.find('\n## ', heading.end())
+    print(text[heading.start():end if end != -1 else None].strip())
 
 
 def main():

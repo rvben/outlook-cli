@@ -1,0 +1,11 @@
+[project]
+branch = "main"
+
+[changelog]
+unconventional = "exclude"
+
+[checks]
+lint = true
+tests = true
+lint_command = "cargo fmt -- --check && cargo clippy --locked --all-targets -- -D warnings"
+test_command = "cargo test --locked --all-targets"

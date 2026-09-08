@@ -21,18 +21,30 @@ PowerShell mock bridge tests, run before packaging.
 
 ## Prepare and build
 
-1. Update Cargo.toml, Cargo.lock, and CHANGELOG.md to the same new version.
-2. Commit the release changes. Push main and dispatch `Release` with `publish=false`
-   to verify the build before tagging, or push the version tag to build it.
-3. Wait for the complete workflow to pass. Tags build packages; they do not
-   automatically publish to a registry.
+Vership owns versioning, changelog generation, release commits, tags, and pushes.
+From a clean main branch, prepare the next patch with:
 
 ```sh
-gh workflow run release.yml --ref main -f publish=false
+vership bump patch --prepare
+```
+
+For a version already set in the manifests, use `vership release --prepare`
+instead. Review the staged paths before committing any local working material;
+release commits must exclude design reports and screenshots.
+
+After reviewing the release commit, `vership release` runs its checks and pushes
+the branch and version tag. The tag starts the seven-platform build. Tags do not
+automatically publish to registries.
+
+```sh
+vership release
 gh run watch RUN_ID --exit-status
 gh run download RUN_ID --name release-packages --dir dist/VERSION
 python scripts/release.py verify dist/VERSION --require-tag vVERSION
 ```
+
+A build-only preview is also available with
+`gh workflow run release.yml --ref main -f publish=false`.
 
 ## Publish
 
@@ -51,7 +63,8 @@ uv tool run --from twine twine check dist/VERSION/*.whl dist/VERSION/outlook_cli
 uv tool run --from twine twine upload --non-interactive dist/VERSION/*.whl dist/VERSION/outlook_cli_rs-*.tar.gz
 ```
 
-Verify registry versions and SHA-256 digests after publication. Never replace a
+Run `vership verify VERSION` after publication to check the tag, GitHub release,
+crates.io, and PyPI. Also verify published asset SHA-256 digests. Never replace a
 published version or move its tag. If anything was published, prepare a new patch
 version for fixes; do not rerun the publish job against an already published
 version. If nothing was published, repair the build and retry the same version.

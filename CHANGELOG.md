@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.3 - 2026-09-08
+## [0.2.3] - 2026-09-08
 
 ### Fixed
 
@@ -9,7 +9,7 @@
 - Provide executable archives and SHA-256 checksums for every wheel target.
 - Clarify that source installations on other platforms require Rust and native build tools.
 
-## 0.2.2 - 2026-09-08
+## [0.2.2] - 2026-09-08
 
 ### Added
 
@@ -27,7 +27,7 @@
 - Attachments and calendar commands remain Graph-only.
 - Desktop bridge tests pass with mock Outlook objects; live Windows/WSL COM validation remains outstanding.
 
-## 0.2.1 - 2026-09-08
+## [0.2.1] - 2026-09-08
 
 ### Added
 
