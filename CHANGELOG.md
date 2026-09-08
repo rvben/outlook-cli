@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.4](https://github.com/rvben/outlook-cli/compare/v0.2.3...v0.2.4) - 2026-09-08
+
+### Added
+
+- **tui**: add read-only keyboard inbox with message previews ([c59ede4](https://github.com/rvben/outlook-cli/commit/c59ede4e3357479da05202e242e8249cb20ca3cc))
+
 ## [0.2.3] - 2026-09-08
 
 ### Fixed
