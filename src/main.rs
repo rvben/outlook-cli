@@ -100,6 +100,28 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
         require_desktop_command(&command, &selected)?;
     }
     match command {
+        Command::Tui {
+            folder,
+            demo,
+            snapshot,
+            width,
+            height,
+        } => {
+            if snapshot {
+                if folder != "inbox" {
+                    return Err(AppError::InvalidInput(
+                        "--snapshot shows the demo inbox; omit --folder".into(),
+                    ));
+                }
+                println!("{}", outlook_cli::tui::snapshot(width, height)?);
+                Ok(())
+            } else {
+                if out.format == OutputFormat::Json {
+                    return Err(AppError::InvalidInput("`outlook tui` is interactive; use `outlook inbox --output json` for structured data".into()));
+                }
+                outlook_cli::tui::run(profile, folder, demo, cli.no_color).await
+            }
+        }
         Command::Init(args) => init(profile.unwrap_or("default"), args, out).await,
         Command::Auth { command } => auth_command(profile, command, out).await,
         Command::Profile { command } => profile_command(command, yes, out),
@@ -861,12 +883,12 @@ async fn doctor(profile_arg: Option<&str>, offline: bool, out: Output) -> Result
 
 fn capabilities(out: Output) -> Result<(), AppError> {
     let value = serde_json::json!({
-        "supported":["delegated device-code OAuth","personal and work/school accounts","mail listing, reading, search, and field projection","sending, replying, moving, deleting, and read-state updates","draft lifecycle","attachment upload and download up to 150 MiB","calendar agenda and event creation","immutable Outlook IDs","read-only profiles","CLI Spec v0.3"],
-        "planned":["browser PKCE login","keyboard-first TUI","HTML composition and inline attachments","meeting responses","contacts and categories","delta synchronization and local cache"],
+        "supported":["read-only keyboard inbox with search, folders, pagination, and message preview","delegated device-code OAuth","personal and work/school accounts","mail listing, reading, search, and field projection","sending, replying, moving, deleting, and read-state updates","draft lifecycle","attachment upload and download up to 150 MiB","calendar agenda and event creation","immutable Outlook IDs","read-only profiles","CLI Spec v0.3"],
+        "planned":["browser PKCE login","HTML composition and inline attachments","meeting responses","contacts and categories","delta synchronization and local cache"],
         "api":"Microsoft Graph v1.0",
         "backends":schema::backend_capabilities()
     });
-    out.value(&value, || "Graph: full mail lifecycle, attachments, calendar essentials, and device-code OAuth.\nDesktop (Windows/WSL, classic Outlook): folders, mail listing/reading, literal subject/sender search, and draft listing.\nPlanned: TUI, rich composition, meeting responses, contacts, and delta sync.".into())
+    out.value(&value, || "Graph: full mail lifecycle, attachments, calendar essentials, and device-code OAuth.\nDesktop (Windows/WSL, classic Outlook): folders, mail listing/reading, literal subject/sender search, and draft listing.\nInteractive: outlook tui (read-only inbox, search, folders, and previews).\nPlanned: rich composition, meeting responses, contacts, and delta sync.".into())
 }
 
 fn read_body(raw: &str) -> Result<String, AppError> {

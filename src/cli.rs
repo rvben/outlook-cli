@@ -11,7 +11,7 @@ use crate::output::OutputFormat;
     version,
     about = "Microsoft Outlook from your terminal, for humans and agents",
     styles = help_styles(),
-    after_help = "Get started:\n  outlook init                         Configure and sign in\n  outlook inbox                        Read recent mail\n  outlook mail search 'quarterly report'\n  outlook doctor                       Check your connection\n\nAutomation:\n  outlook inbox --output json\n  outlook schema --command 'mail send'\n\nRun outlook <command> --help for details and examples."
+    after_help = "Get started:\n  outlook init                         Configure and sign in\n  outlook inbox                        Read recent mail\n  outlook tui                          Browse mail interactively\n  outlook mail search 'quarterly report'\n  outlook doctor                       Check your connection\n\nAutomation:\n  outlook inbox --output json\n  outlook schema --command 'mail send'\n\nRun outlook <command> --help for details and examples."
 )]
 pub struct Cli {
     /// Use a named profile instead of the active profile
@@ -37,6 +37,24 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Browse mail with a keyboard-driven inbox and message preview
+    Tui {
+        /// Well-known folder name or folder ID to open
+        #[arg(long, default_value = "inbox")]
+        folder: String,
+        /// Explore sample mail offline, without credentials
+        #[arg(long)]
+        demo: bool,
+        /// Print a deterministic sample screen without entering a terminal
+        #[arg(long, requires = "demo")]
+        snapshot: bool,
+        /// Width of a sample screen
+        #[arg(long, default_value_t = 120, requires = "snapshot", value_parser = clap::value_parser!(u16).range(36..=240))]
+        width: u16,
+        /// Height of a sample screen
+        #[arg(long, default_value_t = 32, requires = "snapshot", value_parser = clap::value_parser!(u16).range(12..=100))]
+        height: u16,
+    },
     /// Configure a Graph or desktop profile
     Init(InitArgs),
     /// Manage delegated Microsoft authentication

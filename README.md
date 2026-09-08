@@ -204,6 +204,46 @@ never overwrite unless `--force` is supplied; uploads switch automatically to
 Microsoft's resumable upload sessions at 3 MiB. Stdout contains data;
 diagnostics and sign-in instructions go to stderr.
 
+## Interactive inbox
+
+```console
+outlook tui                         # Browse the active profile's inbox
+outlook tui --folder sentitems       # Open another folder
+outlook --profile local tui          # Classic Outlook on Windows/WSL
+outlook tui --demo                   # Try sample mail without signing in
+outlook tui --demo --snapshot        # Print an offline sample screen
+```
+
+The browser is read-only: previewing a message does not mark it as read.
+Wide terminals show a message list and a reading pane; below 100 columns,
+Enter or Tab switches between them. The minimum usable size is 36 × 12.
+Colors follow your terminal palette and respect `--no-color` and `NO_COLOR`.
+
+| Key | Action |
+| --- | --- |
+| ↑ / ↓ or `j` / `k` | Select a message, or scroll the focused preview |
+| Enter / Tab | Switch between list and preview |
+| Page Up / Page Down | Scroll the message by ten lines |
+| Home / End | Jump to the beginning or end of the focused preview |
+| `/` | Search the current folder; Enter applies, Esc cancels |
+| Esc in the list | Clear the search, or quit if no search is active |
+| `f` | Browse folders; Enter opens a folder's mail |
+| → / ← in folders | Browse children / return to the parent |
+| `n` | Load the next page when available |
+| `r` | Refresh the focused pane, or retry a failed request |
+| `?` | Open the keyboard guide |
+| `q` / Ctrl+C | Quit |
+
+Graph searches use Outlook syntax; desktop searches use literal subject/sender
+text. Folder browsing includes child folders and pagination. An empty desktop
+search page can still have more matches to scan; press `n` when offered.
+Reads run asynchronously, with a timeout and cancellable previews. On WSL,
+the desktop bridge's existing Windows-process cleanup limitations still apply.
+Sign in with `outlook init` or `outlook auth login` before opening a live inbox.
+Interactive mode requires terminal input and output; use the regular commands
+and JSON for scripts. `--snapshot` always prints plain sample text and supports
+`--width` (36–240) and `--height` (12–100).
+
 ## Terminal experience
 
 Run `outlook` in a terminal for a quick-start guide. Mail lists show full subjects,
@@ -225,7 +265,7 @@ outlook --no-color mail read MESSAGE_ID
 
 ## Status
 
-The command surface is under active development. A keyboard-first TUI, rich
+The command surface is under active development. Rich
 HTML composition, inline attachments, meeting responses, contacts, and delta
 synchronization are planned after the core Graph and authentication contracts
 settle.

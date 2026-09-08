@@ -8,3 +8,4 @@ pub mod graph;
 pub mod output;
 pub mod presentation;
 pub mod schema;
+pub mod tui;

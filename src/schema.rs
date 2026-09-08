@@ -47,6 +47,14 @@ pub fn generate(command_filter: Option<&str>) -> Value {
         field("importance", "string"),
     ];
     let mut commands = vec![
+        json!({"name":"tui","description":"Read-only keyboard inbox with search, folders, pagination, and message preview",
+            "effects":"read_only","output_kind":"opaque","media_type":"text/plain",
+            "args":[arg("--folder","string","Well-known folder name or ID; default inbox"),
+                arg("--demo","boolean","Use offline sample mail"),
+                arg("--snapshot","boolean","Print a sample screen; requires --demo"),
+                arg("--width","integer","Sample screen width, 36–240; requires --snapshot; default 120"),
+                arg("--height","integer","Sample screen height, 12–100; requires --snapshot; default 32")],
+            "extensions":{"interactive":true,"snapshot_offline":true,"preview_marks_read":false}}),
         {
             let mut value = single(
                 "init",
@@ -608,7 +616,7 @@ pub fn backend_capabilities() -> Value {
             "authentication":"windows_outlook_profile",
             "platforms":["windows","wsl"],
             "requires":"classic Outlook and Windows PowerShell; new Outlook is unsupported",
-            "supported_commands":["mail folders","inbox","mail list","mail read","mail search","mail draft list","mail send","mail reply","mail move","mail delete","mail mark-read","mail mark-unread","mail draft create","mail draft update","mail draft send","mail draft delete","auth status","doctor"],
+            "supported_commands":["tui","mail folders","inbox","mail list","mail read","mail search","mail draft list","mail send","mail reply","mail move","mail delete","mail mark-read","mail mark-unread","mail draft create","mail draft update","mail draft send","mail draft delete","auth status","doctor"],
             "id_type":"desktop: base64 JSON containing EntryID and StoreID; may change after moves",
             "search":"case-insensitive literal subject/sender text in one folder; default inbox",
             "pagination":"position-based; at most 1000 items scanned per page; mailbox changes can shift results",
