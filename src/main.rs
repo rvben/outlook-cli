@@ -1,7 +1,7 @@
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::Path;
 
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, FromArgMatches};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -16,12 +16,26 @@ use outlook_cli::desktop::{self, DesktopClient};
 use outlook_cli::error::AppError;
 use outlook_cli::graph::{self, GraphClient, Page};
 use outlook_cli::output::{Output, OutputFormat, print_error, structured_from_args};
+use outlook_cli::presentation::{PageKind, message_text, page_text};
 use outlook_cli::schema;
 
 #[tokio::main]
 async fn main() {
     let structured = structured_from_args();
-    let cli = match Cli::try_parse() {
+    let no_color = std::env::args()
+        .take_while(|arg| arg != "--")
+        .any(|arg| arg == "--no-color")
+        || std::env::var_os("NO_COLOR").is_some();
+    outlook_cli::output::set_no_color(no_color);
+    let command = if no_color {
+        Cli::command().color(clap::ColorChoice::Never)
+    } else {
+        Cli::command()
+    };
+    let cli = match command
+        .try_get_matches()
+        .and_then(|matches| Cli::from_arg_matches(&matches))
+    {
         Ok(cli) => cli,
         Err(error) => {
             if matches!(
@@ -38,6 +52,20 @@ async fn main() {
             error.exit();
         }
     };
+    if cli.command.is_none()
+        && cli.output != OutputFormat::Json
+        && !cli.json
+        && io::stdin().is_terminal()
+        && io::stdout().is_terminal()
+    {
+        let mut help = Cli::command();
+        if no_color {
+            help = help.color(clap::ColorChoice::Never);
+        }
+        let _ = help.print_help();
+        println!();
+        return;
+    }
     let out = Output {
         format: if cli.json && cli.output == OutputFormat::Auto {
             OutputFormat::Json
@@ -94,7 +122,7 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
                 .folders(parent.as_deref(), page.limit, page.cursor.as_deref())
                 .await?;
             graph::select_fields(&mut result, page.fields.as_deref())?;
-            render_page(&result, out, folder_line)
+            render_page(&result, out, PageKind::Folders)
         }
         Command::Mail {
             command: MailCommand::List { folder, page },
@@ -134,7 +162,7 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
                 )
                 .await?;
             graph::select_fields(&mut result, page.fields.as_deref())?;
-            render_page(&result, out, message_line)
+            render_page(&result, out, PageKind::Messages)
         }
         Command::Mail {
             command: MailCommand::MarkRead { id },
@@ -222,7 +250,7 @@ async fn dispatch(cli: Cli, out: Output) -> Result<(), AppError> {
                 .agenda(&start, &end, &timezone, page.limit, page.cursor.as_deref())
                 .await?;
             graph::select_fields(&mut result, page.fields.as_deref())?;
-            render_page(&result, out, event_line)
+            render_page(&result, out, PageKind::Events)
         }
         Command::Calendar {
             command:
@@ -511,7 +539,7 @@ async fn list_messages(
         .messages(folder, page.limit, page.cursor.as_deref())
         .await?;
     graph::select_fields(&mut result, page.fields.as_deref())?;
-    render_page(&result, out, message_line)
+    render_page(&result, out, PageKind::Messages)
 }
 
 async fn set_message_read(
@@ -627,7 +655,7 @@ async fn attachment_command(
                 .attachments(&message_id, page.limit, page.cursor.as_deref())
                 .await?;
             graph::select_fields(&mut result, page.fields.as_deref())?;
-            render_page(&result, out, attachment_line)
+            render_page(&result, out, PageKind::Attachments)
         }
         AttachmentCommand::Add {
             message_id,
@@ -752,20 +780,8 @@ fn write_download(path: &Path, bytes: &[u8], force: bool) -> Result<(), AppError
     Ok(())
 }
 
-fn render_page(page: &Page, out: Output, line: fn(&Value) -> String) -> Result<(), AppError> {
-    out.value(page, || {
-        let mut text = if page.items.is_empty() {
-            "No results.".into()
-        } else {
-            page.items.iter().map(line).collect::<Vec<_>>().join("\n")
-        };
-        if page.truncated {
-            text.push_str(
-                "\n\nMore results are available; use --cursor with next_cursor from JSON output.",
-            );
-        }
-        text
-    })
+fn render_page(page: &Page, out: Output, kind: PageKind) -> Result<(), AppError> {
+    out.value(page, || page_text(page, kind))
 }
 
 async fn doctor(profile_arg: Option<&str>, offline: bool, out: Output) -> Result<(), AppError> {
@@ -891,81 +907,8 @@ fn identity_text(value: &Value) -> String {
     )
 }
 
-fn message_text(value: &Value) -> String {
-    let from = value
-        .pointer("/from/emailAddress/address")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown sender");
-    let body = value
-        .pointer("/body/content")
-        .and_then(Value::as_str)
-        .or_else(|| value.pointer("/bodyPreview").and_then(Value::as_str))
-        .unwrap_or("");
-    format!(
-        "{}\nFrom: {from}\nDate: {}\n\n{body}",
-        string(value, "/subject"),
-        string(value, "/receivedDateTime")
-    )
-}
-
-fn message_line(value: &Value) -> String {
-    let unread = if value
-        .pointer("/isRead")
-        .and_then(Value::as_bool)
-        .unwrap_or(true)
-    {
-        " "
-    } else {
-        "●"
-    };
-    let from = value
-        .pointer("/from/emailAddress/name")
-        .and_then(Value::as_str)
-        .or_else(|| {
-            value
-                .pointer("/from/emailAddress/address")
-                .and_then(Value::as_str)
-        })
-        .unwrap_or("unknown");
-    format!(
-        "{unread} {:<24}  {:<42}  {}",
-        truncate(from, 24),
-        truncate(string(value, "/subject"), 42),
-        string(value, "/receivedDateTime")
-    )
-}
-
-fn event_line(value: &Value) -> String {
-    format!(
-        "{}–{}  {}",
-        string(value, "/start/dateTime"),
-        string(value, "/end/dateTime"),
-        string(value, "/subject")
-    )
-}
-
-fn attachment_line(value: &Value) -> String {
-    format!(
-        "{:<42}  {:>10}  {}",
-        truncate(string(value, "/name"), 42),
-        value.pointer("/size").and_then(Value::as_u64).unwrap_or(0),
-        string(value, "/contentType")
-    )
-}
-
 fn string<'a>(value: &'a Value, pointer: &str) -> &'a str {
     value.pointer(pointer).and_then(Value::as_str).unwrap_or("")
-}
-fn truncate(value: &str, width: usize) -> String {
-    if value.chars().count() <= width {
-        value.into()
-    } else {
-        value
-            .chars()
-            .take(width.saturating_sub(1))
-            .collect::<String>()
-            + "…"
-    }
 }
 fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
@@ -991,14 +934,6 @@ fn confirm_destructive(yes: bool, prompt: &str) -> Result<(), AppError> {
             "operation cancelled; no changes were made".into(),
         ))
     }
-}
-
-fn folder_line(value: &Value) -> String {
-    format!(
-        "{}  {}",
-        string(value, "/displayName"),
-        string(value, "/id")
-    )
 }
 
 fn require_graph(profile: &Profile) -> Result<(), AppError> {

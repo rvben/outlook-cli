@@ -6,4 +6,5 @@ pub mod desktop;
 pub mod error;
 pub mod graph;
 pub mod output;
+pub mod presentation;
 pub mod schema;

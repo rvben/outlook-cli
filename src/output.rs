@@ -1,4 +1,23 @@
 use std::io::IsTerminal;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static NO_COLOR: AtomicBool = AtomicBool::new(false);
+
+pub fn set_no_color(disabled: bool) {
+    NO_COLOR.store(disabled, Ordering::Relaxed);
+}
+
+pub fn accent(text: &str) -> String {
+    if std::io::stdout().is_terminal()
+        && !NO_COLOR.load(Ordering::Relaxed)
+        && std::env::var_os("NO_COLOR").is_none()
+        && std::env::var("TERM").as_deref() != Ok("dumb")
+    {
+        format!("\x1b[1;36m{text}\x1b[0m")
+    } else {
+        text.to_owned()
+    }
+}
 
 use clap::ValueEnum;
 use serde::Serialize;

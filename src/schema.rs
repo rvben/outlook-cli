@@ -580,6 +580,7 @@ pub fn generate(command_filter: Option<&str>) -> Value {
         "description":"Microsoft Outlook from your terminal, for humans and agents",
         "output":{"tty":"text","piped":"json"},
         "global_args":[
+            {"name":"--no-color","type":"boolean","description":"Disable terminal colors; also respects NO_COLOR"},
             {"name":"--output","short":"-o","type":"string","enum":["auto","text","json"],"default":"auto","description":"Output format"},
             {"name":"--profile","type":"string","description":"Configuration profile"},
             {"name":"--quiet","type":"boolean","description":"Suppress informational stderr output"},

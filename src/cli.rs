@@ -10,15 +10,22 @@ use crate::output::OutputFormat;
     name = "outlook",
     version,
     about = "Microsoft Outlook from your terminal, for humans and agents",
-    after_help = "Get started:\n  outlook init\n  outlook inbox\n  outlook calendar agenda --start START --end END\n  outlook doctor\n  outlook schema --command 'mail send'"
+    styles = help_styles(),
+    after_help = "Get started:\n  outlook init                         Configure and sign in\n  outlook inbox                        Read recent mail\n  outlook mail search 'quarterly report'\n  outlook doctor                       Check your connection\n\nAutomation:\n  outlook inbox --output json\n  outlook schema --command 'mail send'\n\nRun outlook <command> --help for details and examples."
 )]
 pub struct Cli {
+    /// Use a named profile instead of the active profile
     #[arg(long, global = true, env = "OUTLOOK_PROFILE")]
     pub profile: Option<String>,
+    /// Output format (auto: text in a terminal, JSON when piped)
     #[arg(short = 'o', long, global = true, value_enum, default_value = "auto")]
     pub output: OutputFormat,
+    /// Suppress informational messages on stderr
     #[arg(long, global = true)]
     pub quiet: bool,
+    /// Disable terminal colors (also respects NO_COLOR)
+    #[arg(long, global = true)]
+    pub no_color: bool,
     /// Skip confirmation prompts for destructive operations
     #[arg(long, short = 'y', global = true)]
     pub yes: bool,
@@ -122,7 +129,9 @@ pub enum ProfileCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
+    /// Show the resolved configuration without secrets
     Show,
+    /// Print the configuration file location
     Path,
 }
 
@@ -140,6 +149,9 @@ pub struct PageArgs {
 }
 
 #[derive(Debug, Subcommand)]
+#[command(
+    after_help = "Examples:\n  outlook mail list --folder sentitems\n  outlook mail read MESSAGE_ID\n  outlook mail search 'quarterly report'\n  outlook mail send --to person@example.com --subject 'Hello' --body 'Hi'\n\nMessage IDs appear in list output. Use --body - to read a body from stdin."
+)]
 pub enum MailCommand {
     /// List mail folders (use --parent to list child folders)
     Folders {
@@ -292,6 +304,9 @@ pub enum DraftCommand {
 }
 
 #[derive(Debug, Subcommand)]
+#[command(
+    after_help = "Examples:\n  outlook calendar agenda --start 2026-09-08T00:00:00Z --end 2026-09-15T00:00:00Z\n  outlook calendar create --subject 'Project sync' --start 2026-09-09T09:00:00 --end 2026-09-09T09:30:00 --timezone Europe/Amsterdam\n\nCalendar commands require a Graph profile."
+)]
 pub enum CalendarCommand {
     /// List occurrences and events in a time range
     Agenda {
@@ -322,4 +337,13 @@ pub enum CalendarCommand {
         #[arg(long, default_value = "")]
         body: String,
     },
+}
+
+fn help_styles() -> clap::builder::Styles {
+    use clap::builder::styling::AnsiColor;
+    clap::builder::Styles::styled()
+        .header(AnsiColor::Cyan.on_default().bold())
+        .usage(AnsiColor::Cyan.on_default().bold())
+        .literal(AnsiColor::Green.on_default())
+        .placeholder(AnsiColor::Yellow.on_default())
 }

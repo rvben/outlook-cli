@@ -126,7 +126,8 @@ sender address, limited to one folder (inbox by default). KQL and regular expres
 are not interpreted. Sender addresses may be Exchange legacy addresses as exposed
 by Outlook. Results reflect the desktop client's available/synchronized data.
 
-Use JSON output to obtain message IDs and continuation tokens. Desktop IDs encode
+Text output includes copyable message IDs and continuation tokens; JSON exposes
+the same values as structured fields. Desktop IDs encode
 both EntryID and StoreID, are unrelated to Graph IDs, and can change after moves.
 Pages scan at most 1,000 items or about 30 seconds before returning a continuation;
 a search page can be empty with more items still to scan. Pass `--cursor` with the
@@ -179,6 +180,25 @@ confirm on a terminal and require `--yes` in automation. Attachment downloads
 never overwrite unless `--force` is supplied; uploads switch automatically to
 Microsoft's resumable upload sessions at 3 MiB. Stdout contains data;
 diagnostics and sign-in instructions go to stderr.
+
+## Terminal experience
+
+Run `outlook` in a terminal for a quick-start guide. Mail lists show full subjects,
+sender details, unread and attachment indicators, and copyable IDs. Message reading
+includes recipients and preserves body paragraphs. Folders show total and unread
+counts; attachments show readable sizes; agendas include timezone and location
+when supplied by the backend. Paginated text output includes the next cursor,
+including when a desktop search returns an empty page with more items to scan.
+
+Headings use a restrained cyan accent on terminals. Set `NO_COLOR=1` or pass
+`--no-color` to disable colors. Redirected text has no color escapes. Mail views
+remove terminal control sequences from remote content before displaying it.
+
+```console
+outlook inbox --output text          # Readable output even when redirected
+outlook inbox --output json          # Structured records for scripts
+outlook --no-color mail read MESSAGE_ID
+```
 
 ## Status
 

@@ -368,6 +368,20 @@ fn read_only_profile_blocks_marking_mail_before_authentication() {
 }
 
 #[test]
+fn help_explains_output_and_color_controls() {
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .args(["--no-color", "--help"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("JSON when piped")
+                .and(predicate::str::contains("--no-color"))
+                .and(predicate::str::contains("\x1b").not()),
+        );
+}
+
+#[test]
 fn short_text_flag_also_controls_parse_errors() {
     Command::cargo_bin("outlook")
         .unwrap()
