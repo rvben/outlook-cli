@@ -366,3 +366,15 @@ fn read_only_profile_blocks_marking_mail_before_authentication() {
         .code(2)
         .stderr(predicate::str::contains("\"kind\":\"read_only\""));
 }
+
+#[test]
+fn short_text_flag_also_controls_parse_errors() {
+    Command::cargo_bin("outlook")
+        .unwrap()
+        .args(["-o", "text", "inbox", "--limit", "0"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("error:").and(predicate::str::contains("\"error\":").not()),
+        );
+}

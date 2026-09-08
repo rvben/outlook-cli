@@ -60,12 +60,16 @@ pub fn print_error(error: &AppError, structured: bool) {
 }
 
 pub fn structured_from_args() -> bool {
-    let args: Vec<String> = std::env::args().collect();
-    let explicit_text = args.windows(2).any(|pair| pair == ["--output", "text"])
+    let args: Vec<String> = std::env::args().take_while(|arg| arg != "--").collect();
+    let explicit_text = args
+        .windows(2)
+        .any(|pair| pair == ["--output", "text"] || pair == ["-o", "text"])
         || args
             .iter()
             .any(|arg| arg == "--output=text" || arg == "-otext");
-    let explicit_json = args.windows(2).any(|pair| pair == ["--output", "json"])
+    let explicit_json = args
+        .windows(2)
+        .any(|pair| pair == ["--output", "json"] || pair == ["-o", "json"])
         || args
             .iter()
             .any(|arg| arg == "--output=json" || arg == "-ojson" || arg == "--json");
