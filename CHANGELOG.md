@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.5](https://github.com/rvben/outlook-cli/compare/v0.2.4...v0.2.5) - 2026-09-27
+
+### Fixed
+
+- **deps**: update rustls to 0.23.45 for RUSTSEC-2026-0285 ([933ef57](https://github.com/rvben/outlook-cli/commit/933ef573cb7a2a292da3228979de0c05a220681a))
+
 ## [0.2.4](https://github.com/rvben/outlook-cli/compare/v0.2.3...v0.2.4) - 2026-09-08
 
 ### Added
